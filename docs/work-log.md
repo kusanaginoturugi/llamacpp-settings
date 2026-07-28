@@ -12,6 +12,8 @@
 - `/home/onoue/src/oss/llama.cpp/tools/ui/dist` を参考用に `ui-dist/` へコピーした。
 - README に `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` が日本語化済み Web UI dist を指定するためのものだと追記した。
 - 日本語化された Web UI 設定画面のスクリーンショットを `docs/images/llama-ui-settings-ja.png` に追加した。
+- README の `models.ini` 説明を修正し、Hugging Face 取得の `hf` / `hf-repo` / `hf-file` を使う前提に寄せた。
+- README から手動ダウンロードした GGUF をローカルファイル指定で使う説明を削除した。
 
 ## 確認事項
 
@@ -20,3 +22,4 @@
 - service の再起動や API 実リクエストは未実施。
 - `ui-dist/` は 67 ファイル、約 8.8MB。
 - `docs/images/llama-ui-settings-ja.png` は 1242x1181 の PNG。
+- OpenAI 互換 API の JSON にある `"model"` は `/v1/models` で見えるモデル ID を指定するものとして記載した。

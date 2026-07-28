@@ -50,7 +50,7 @@ llama-server --version
 CUDA 対応ビルドかどうかは、起動ログで確認するのが確実。
 
 ```sh
-llama-server --model /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf \
+llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
   --n-gpu-layers 1 \
   --ctx-size 512 \
   --no-webui
@@ -141,14 +141,6 @@ parallel = 4
 n-gpu-layers = all
 stop-timeout = 10
 
-[gemma4-coding-12b]
-model = /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf
-chat-template-file = /home/onoue/.local/lib/models/gemma-4.jinja
-ctx-size = 65536
-parallel = 1
-n-gpu-layers = all
-stop-timeout = 10
-
 [translategemma-4b-translate]
 hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
 chat-template-file = /home/onoue/.local/lib/models/gemma.jinja
@@ -179,12 +171,6 @@ hf = unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
 ```ini
 hf-repo = deepreinforce-ai/Ornith-1.0-9B-GGUF
 hf-file = ornith-1.0-9b-Q4_K_M.gguf
-```
-
-`model` はローカルに置いた GGUF ファイルを直接読む指定。
-
-```ini
-model = /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf
 ```
 
 ## systemd user service
@@ -227,13 +213,18 @@ WantedBy=default.target
 
 ![llama.cpp Web UI 日本語設定画面](docs/images/llama-ui-settings-ja.png)
 
-この service を `systemctl --user` で常駐させておくと、利用側は API リクエストで
-`models.ini` のセクション名を `model` に指定するだけでよい。
+この service を `systemctl --user` で常駐させておくと、`models.ini` に書いたモデル定義を
+router server が読む。Hugging Face のモデルは、各セクションで `hf = repo:quant` の形で指定する。
 
-```json
-{
-  "model": "translategemma-4b-translate"
-}
+```ini
+[gemma-4-E4B-it]
+hf = unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
+```
+
+API リクエストで指定するモデル名は、起動後に `/v1/models` で確認する。
+
+```sh
+curl http://127.0.0.1:8080/v1/models
 ```
 
 手元で毎回 `llama serve -hf repo/model:quant` を起動し直さなくて済むので、
@@ -291,7 +282,7 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   }'
 ```
 
-`model` には `/v1/models` で見えるモデル名を指定する。
+JSON の `"model"` には `/v1/models` で見えるモデル ID を指定する。
 
 Web UI はブラウザで開く。
 
@@ -316,21 +307,13 @@ llama serve -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
 Hugging Face 上のモデルが更新された場合も、キャッシュ側は必要に応じて更新される。
 モデル取得と更新確認を llama.cpp 側に任せられるので、手で GGUF を探して落としてくる手間が減る。
 
-この README の systemd 設定では、モデルの実体管理は `hf` / `hf-repo` / `hf-file` に任せる。
-`/etc/llama.cpp/models.ini` には「どの Hugging Face モデルをどの名前で使うか」だけを書いておき、
-利用側は `model` にセクション名を指定する。
+この README の systemd 設定では、Hugging Face から取得するモデルは
+`hf` / `hf-repo` / `hf-file` に任せる。
+`/etc/llama.cpp/models.ini` には、各セクションごとにモデル取得元を書く。
 
 ```text
 [translategemma-4b-translate]
 hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
-```
-
-API からはこの名前で呼ぶ。
-
-```json
-{
-  "model": "translategemma-4b-translate"
-}
 ```
 
 キャッシュ内のモデル一覧はこれで確認する。
@@ -385,4 +368,3 @@ Local Translator や xTranslator 向けの軽量設定。
 - `ctx-size` と `parallel` を大きくすると KV cache が増えて VRAM 使用量も増える。
 - `n-gpu-layers = all` は可能な限り GPU に載せる設定。VRAM が足りない場合は数値指定に落とす。
 - `hf` / `hf-repo` / `hf-file` を使うモデルは、初回起動時にダウンロードが必要になる。
-- ローカル `model` 指定のモデルは、指定パスに GGUF ファイルが存在しないと起動に失敗する。
