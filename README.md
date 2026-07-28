@@ -220,6 +220,18 @@ WantedBy=default.target
 
 `--tools` は llama.cpp のツール呼び出しで使えるツールを指定する。
 
+この service を `systemctl --user` で常駐させておくと、利用側は API リクエストで
+`models.ini` のセクション名を `model` に指定するだけでよい。
+
+```json
+{
+  "model": "translategemma-4b-translate"
+}
+```
+
+手元で毎回 `llama serve -hf repo/model:quant` を起動し直さなくて済むので、
+Local Translator、xTranslator、OpenAI 互換クライアントから使いやすい。
+
 ## サービスを反映する
 
 ```sh
@@ -282,17 +294,37 @@ http://127.0.0.1:8080
 
 ## モデル保存先
 
-`hf` / `hf-repo` / `hf-file` で Hugging Face から取得する GGUF は、llama.cpp のデフォルトキャッシュを使う。
-この設定では `LLAMA_CACHE` を指定していない。
+`llama serve -hf モデル名` を使うと、Hugging Face からモデルがダウンロードされる。
 
-Linux では通常、保存先は次の場所。
-
-```text
-/home/onoue/.cache/llama.cpp/
+```sh
+llama serve -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
 ```
 
-`XDG_CACHE_HOME` が設定されている場合は、その下の `llama.cpp/` が使われる。
-`LLAMA_CACHE` を明示すると保存先を変更できるが、この設定ではデフォルトの保存先を使う。
+この場合、モデルは Hugging Face のキャッシュ配下に保存される。
+
+```text
+/home/onoue/.cache/huggingface/
+```
+
+Hugging Face 上のモデルが更新された場合も、キャッシュ側は必要に応じて更新される。
+モデル取得と更新確認を llama.cpp 側に任せられるので、手で GGUF を探して落としてくる手間が減る。
+
+この README の systemd 設定では、モデルの実体管理は `hf` / `hf-repo` / `hf-file` に任せる。
+`/etc/llama.cpp/models.ini` には「どの Hugging Face モデルをどの名前で使うか」だけを書いておき、
+利用側は `model` にセクション名を指定する。
+
+```text
+[translategemma-4b-translate]
+hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
+```
+
+API からはこの名前で呼ぶ。
+
+```json
+{
+  "model": "translategemma-4b-translate"
+}
+```
 
 キャッシュ内のモデル一覧はこれで確認する。
 
@@ -303,7 +335,7 @@ llama-server --cache-list
 ディスク使用量を見る。
 
 ```sh
-du -sh /home/onoue/.cache/llama.cpp
+du -sh /home/onoue/.cache/huggingface
 ```
 
 GGUF は数 GB から数十 GB になる。複数モデルを試すなら、空き容量を先に見ておく。
@@ -343,8 +375,6 @@ Local Translator や xTranslator 向けの軽量設定。
 
 ## 注意点
 
-- systemd の `ExecStart` を複数行にする場合、継続する行の末尾には `\` が必要。
-- `--path` 行の末尾に `\` がないと、次の `--tools` が `ExecStart` に含まれない。
 - `ctx-size` と `parallel` を大きくすると KV cache が増えて VRAM 使用量も増える。
 - `n-gpu-layers = all` は可能な限り GPU に載せる設定。VRAM が足りない場合は数値指定に落とす。
 - `hf` / `hf-repo` / `hf-file` を使うモデルは、初回起動時にダウンロードが必要になる。
