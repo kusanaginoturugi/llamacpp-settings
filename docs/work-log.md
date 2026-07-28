@@ -9,9 +9,11 @@
 - `models/` のテンプレートとコピー元の SHA256 が一致することを確認した。
 - README に AUR `llama.cpp-cuda`、GPU/CUDA 確認、linger、OpenAI 互換 API、Hugging Face キャッシュ、VRAM 調整指針を追記した。
 - README から不要な `ExecStart` 継続行の注意書きを削除した。
+- `/home/onoue/src/oss/llama.cpp/tools/ui/dist` を参考用に `ui-dist/` へコピーした。
 
 ## 確認事項
 
 - `llama serve --help` で `-hf`、`HF_TOKEN`、`--no-webui`、`--cache-list` が使えることを確認した。
 - この作業環境では `nvidia-smi` が NVIDIA driver に接続できず、`llama-server --version` でも CUDA 初期化エラーが出た。
 - service の再起動や API 実リクエストは未実施。
+- `ui-dist/` は 67 ファイル、約 8.8MB。
