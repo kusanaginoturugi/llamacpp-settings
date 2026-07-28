@@ -14,6 +14,7 @@
 - 日本語化された Web UI 設定画面のスクリーンショットを `docs/images/llama-ui-settings-ja.png` に追加した。
 - README の `models.ini` 説明を修正し、Hugging Face 取得の `hf` / `hf-repo` / `hf-file` を使う前提に寄せた。
 - README から手動ダウンロードした GGUF をローカルファイル指定で使う説明を削除した。
+- README に新しいモデルを `models.ini` へ追加する前の検証手順を追記した。
 
 ## 確認事項
 
@@ -23,3 +24,4 @@
 - `ui-dist/` は 67 ファイル、約 8.8MB。
 - `docs/images/llama-ui-settings-ja.png` は 1242x1181 の PNG。
 - OpenAI 互換 API の JSON にある `"model"` は `/v1/models` で見えるモデル ID を指定するものとして記載した。
+- `llama-cli` が `/usr/bin/llama-cli` に存在することを確認した。

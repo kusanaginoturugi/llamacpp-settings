@@ -173,6 +173,140 @@ hf-repo = deepreinforce-ai/Ornith-1.0-9B-GGUF
 hf-file = ornith-1.0-9b-Q4_K_M.gguf
 ```
 
+## モデルを追加する手順
+
+まず Hugging Face で使いたい GGUF リポジトリを選ぶ。
+量子化は基本的に `Q4_K_M` から試す。VRAM に余裕があればより重い量子化、厳しければ軽い量子化に変える。
+
+候補モデルを `llama-cli -hf` で単体起動して、最低限の応答を確認する。
+
+```sh
+llama-cli -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
+  --jinja \
+  --n-gpu-layers all \
+  --ctx-size 4096 \
+  --parallel 1 \
+  -p '日本語で短く自己紹介して。'
+```
+
+この時点では大きい `ctx-size` や `parallel` を狙わない。まずモデルが起動して、日本語で破綻せず返るかを見る。
+
+次に Hugging Face のモデルカードや README を確認する。
+
+- 推奨 chat template
+- 推奨 temperature / top-p / top-k
+- 推奨 context length
+- reasoning / thinking の有無
+- tool calling 対応の有無
+- 量子化ごとの想定 VRAM
+- ライセンスや用途制限
+
+推奨値が書かれている場合は、それを `models.ini` に反映する候補にする。
+推奨値が不明な場合は、まず保守的に `ctx-size = 4096`、`parallel = 1` で試す。
+
+メモリ使用量を見ながら、`ctx-size` と `parallel` を上げる。
+
+```sh
+watch -n 1 nvidia-smi
+```
+
+調整の順番は次の通り。
+
+1. `n-gpu-layers = all` で載るか確認する
+2. `ctx-size` を実用に必要な長さまで上げる
+3. `parallel` を必要な同時処理数まで上げる
+4. VRAM が厳しければ `parallel`、`ctx-size`、量子化の順で下げる
+
+CLI で問題なければ、次に一時的に server として起動して OpenAI 互換 API と Web UI で確認する。
+
+```sh
+llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
+  --host 127.0.0.1 \
+  --port 18080 \
+  --jinja \
+  --n-gpu-layers all \
+  --ctx-size 4096 \
+  --parallel 1 \
+  --path /home/onoue/src/oss/llama.cpp/tools/ui/dist
+```
+
+別ターミナルで API を確認する。
+
+```sh
+curl http://127.0.0.1:18080/v1/models
+curl http://127.0.0.1:18080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "v1-modelsで確認したモデルID",
+    "messages": [
+      {
+        "role": "user",
+        "content": "日本語で短く自己紹介して。"
+      }
+    ],
+    "max_tokens": 128
+  }'
+```
+
+Web UI も確認する。
+
+```text
+http://127.0.0.1:18080
+```
+
+確認すること。
+
+- モデル一覧に出るか
+- 日本語 UI で表示できるか
+- チャットが返るか
+- system message が効くか
+- 長めの入力で落ちないか
+- VRAM が想定内に収まるか
+
+問題なければ `/etc/llama.cpp/models.ini` にセクションを追加する。
+
+```ini
+[new-model-name]
+hf = owner/model-GGUF:Q4_K_M
+chat-template-file = /home/onoue/.local/lib/models/template-name.jinja
+n-gpu-layers = all
+ctx-size = 4096
+parallel = 1
+stop-timeout = 10
+temp = 0.7
+top-p = 0.95
+top-k = 40
+```
+
+`hf-repo` と `hf-file` で分けて書く場合。
+
+```ini
+[new-model-name]
+hf-repo = owner/model-GGUF
+hf-file = model-Q4_K_M.gguf
+chat-template-file = /home/onoue/.local/lib/models/template-name.jinja
+n-gpu-layers = all
+ctx-size = 4096
+parallel = 1
+stop-timeout = 10
+```
+
+`models.ini` を変更したら service を再起動する。
+
+```sh
+systemctl --user restart llama.cpp.service
+```
+
+反映後に確認する。
+
+```sh
+systemctl --user status llama.cpp.service
+journalctl --user -u llama.cpp.service -f
+curl http://127.0.0.1:8080/v1/models
+```
+
+最後に Web UI から対象モデルを選んで、短文・長文・system message の動作を確認する。
+
 ## systemd user service
 
 `/home/onoue/.config/systemd/user/llama.cpp.service` を作成する。
