@@ -5,6 +5,7 @@
 - README に llama.cpp の設定手順をまとめ済み。
 - chat-template は `models/` に同梱済み。
 - llama.cpp Web UI の dist は参考用として `ui-dist/` に同梱済み。
+- README に日本語化済み Web UI の設定画面スクリーンショットを掲載済み。
 - systemd user service の実ファイルは `/home/onoue/.config/systemd/user/llama.cpp.service` にあり、`--path` 行の継続 `\` は修正済み。
 
 ## 反映が必要な場合
@@ -28,3 +29,4 @@ sudo loginctl enable-linger onoue
 - Hugging Face からのモデル取得は初回に時間とディスク容量を使う。
 - `models.ini` の `chat-template-file` は `/home/onoue/.local/lib/models/` を参照しているため、別環境では `cp models/*.jinja /home/onoue/.local/lib/models/` が必要。
 - `llama.cpp.service` の `--path` は実運用では `/home/onoue/src/oss/llama.cpp/tools/ui/dist` を参照している。`ui-dist/` は参考用コピー。
+- `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は日本語化済み Web UI dist を使うための指定。

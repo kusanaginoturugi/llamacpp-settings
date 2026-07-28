@@ -218,7 +218,14 @@ WantedBy=default.target
 
 `--jinja` は `chat-template-file` を使うために必要。
 
+`--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は llama.cpp の Web UI を差し替えるために使う。
+この設定では、日本語化済みの Web UI dist を指定している。
+
 `--tools` は llama.cpp のツール呼び出しで使えるツールを指定する。
+
+日本語化された Web UI の設定画面例。
+
+![llama.cpp Web UI 日本語設定画面](docs/images/llama-ui-settings-ja.png)
 
 この service を `systemctl --user` で常駐させておくと、利用側は API リクエストで
 `models.ini` のセクション名を `model` に指定するだけでよい。

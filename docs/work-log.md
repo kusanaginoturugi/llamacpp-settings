@@ -10,6 +10,8 @@
 - README に AUR `llama.cpp-cuda`、GPU/CUDA 確認、linger、OpenAI 互換 API、Hugging Face キャッシュ、VRAM 調整指針を追記した。
 - README から不要な `ExecStart` 継続行の注意書きを削除した。
 - `/home/onoue/src/oss/llama.cpp/tools/ui/dist` を参考用に `ui-dist/` へコピーした。
+- README に `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` が日本語化済み Web UI dist を指定するためのものだと追記した。
+- 日本語化された Web UI 設定画面のスクリーンショットを `docs/images/llama-ui-settings-ja.png` に追加した。
 
 ## 確認事項
 
@@ -17,3 +19,4 @@
 - この作業環境では `nvidia-smi` が NVIDIA driver に接続できず、`llama-server --version` でも CUDA 初期化エラーが出た。
 - service の再起動や API 実リクエストは未実施。
 - `ui-dist/` は 67 ファイル、約 8.8MB。
+- `docs/images/llama-ui-settings-ja.png` は 1242x1181 の PNG。
