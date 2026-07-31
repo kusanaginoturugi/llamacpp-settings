@@ -366,7 +366,34 @@ WantedBy=default.target
 `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は llama.cpp の Web UI を差し替えるために使う。
 この設定では、日本語化済みの Web UI dist を指定している。
 
-`--tools` は llama.cpp のツール呼び出しで使えるツールを指定する。
+`--tools` は llama.cpp のツール呼び出しで使えるビルトインツールを指定する。
+この設定では読み取り・検索・日時取得だけを有効にしている。
+
+```sh
+--tools read_file,file_glob_search,grep_search,get_datetime
+```
+
+llama.cpp のビルトインツールは次の通り。
+
+| tool | 内容 | 書き込み権限 |
+| --- | --- | --- |
+| `read_file` | ファイル読み取り | なし |
+| `file_glob_search` | glob によるファイル検索 | なし |
+| `grep_search` | grep 相当のテキスト検索 | なし |
+| `exec_shell_command` | シェルコマンド実行 | あり |
+| `write_file` | ファイル作成・上書き | あり |
+| `edit_file` | 既存ファイルの部分編集 | あり |
+| `get_datetime` | 日時取得 | なし |
+
+`write_file` と `edit_file` は `llama-server` プロセスの OS 権限で動く。
+この service は `systemctl --user` で起動するため、通常は `onoue` ユーザー権限になる。
+つまり `onoue` が書ける場所には API 経由でも書ける。
+
+llama.cpp 側のビルトインツールには、書き込み先を特定ディレクトリに閉じ込める chroot や専用 sandbox はない。
+Web UI に出る `permissions.write = true` は確認表示用のメタ情報であり、OS 権限を制限するものではない。
+
+`exec_shell_command`、`write_file`、`edit_file` を常駐 service で有効にする場合はかなり強い権限を渡すことになる。
+必要になった場合だけ有効化し、`--host 127.0.0.1`、`--cors-origins` の制限、systemd の `ProtectHome=` や `ReadWritePaths=` などで実行範囲を絞る。
 
 `--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"` は
 Offline-llm-translator ブラウザ拡張機能から llama-server にアクセスするために必要。
@@ -550,6 +577,29 @@ Bearer memos_pat_...
 
 認証エラーになる場合は token を作り直す。
 `403` になる場合は、Memos 側の instance URL / origin 設定か、Web UI 側の proxy 設定を確認する。
+
+### あとで試したい MCP 候補
+
+llama.cpp Web UI に追加する MCP は、まず HTTP / SSE / Streamable HTTP で公開できるものを選ぶ。
+stdio 専用の MCP server は Web UI に URL として直接登録できないため、HTTP 変換用の proxy や adapter を挟む。
+
+優先して試したい候補。
+
+| 候補 | 用途 | 方針 |
+| --- | --- | --- |
+| fetch / URL reader | SearXNG で見つけた URL の本文取得 | 検索結果を読むために最優先で試す |
+| filesystem | ローカルのメモ、README、設定、ログの参照 | read-only か許可ディレクトリ限定で使う |
+| git | リポジトリの差分、履歴、コミット情報の確認 | まず読み取り用途だけで使う |
+| memory | 軽い永続メモリ | Memos と役割がかぶるため、使い分けを決めてから入れる |
+| sqlite / database reader | ローカル DB やアプリ DB の調査 | 読み取り専用ユーザーで接続する |
+| Playwright / browser automation | Web ページの実表示、スクリーンショット、UI 確認 | 権限が強いのでローカル限定で試す |
+| MarkItDown 系 | PDF、Office、HTML などを Markdown 化 | 資料読み込み用に便利 |
+
+この環境では、すでに `mcp-searxng` と Memos MCP がある。
+次に入れるなら、検索結果を読めるようにする fetch / URL reader、ローカル情報を読める filesystem read-only、repo を読める git read-only の順が使いやすい。
+
+MCP server はプロセスの実行権限でファイル、ネットワーク、外部コマンドに触れるものがある。
+常駐させる場合は read-only、ローカル待ち受け、必要なディレクトリだけ許可、token は環境変数で渡す、を基本にする。
 
 ## サービスを反映する
 

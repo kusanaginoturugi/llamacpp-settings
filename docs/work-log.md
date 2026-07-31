@@ -39,3 +39,7 @@
 - `mcp-searxng` 用の systemd user service 例と、SearXNG JSON API / `/health` の確認手順を追記した。
 - README の MCP 節を整理し、`usememos/memos` の組み込み MCP server を llama.cpp Web UI へ登録する手順を追記した。
 - Memos MCP 設定画面のスクリーンショットを `docs/images/memos-mcp-config.png` に追加した。
+- llama.cpp のビルトインツール一覧を確認し、README に `write_file` / `edit_file` / `exec_shell_command` の権限リスクを追記した。
+- `write_file` / `edit_file` は `llama-server` の実行ユーザー権限で動き、専用 sandbox や書き込み先制限はないことを確認した。
+- README の MCP 章に、後で試す候補として fetch / URL reader、filesystem read-only、git read-only、memory、sqlite、Playwright、MarkItDown 系を追記した。
+- MCP server を追加する際は HTTP 系 transport、read-only、ローカル待ち受け、必要なディレクトリだけ許可する方針を追記した。

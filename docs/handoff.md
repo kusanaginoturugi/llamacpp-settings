@@ -32,7 +32,11 @@ sudo loginctl enable-linger onoue
 - `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は日本語化済み Web UI dist を使うための指定。
 - `--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"` は Offline-llm-translator ブラウザ拡張機能用。
 - `--ui-mcp-proxy` は llama-server の Web UI から MCP を使うための指定。
+- 現在の `--tools` は `read_file,file_glob_search,grep_search,get_datetime` のみ。書き込み系の `exec_shell_command`、`write_file`、`edit_file` は有効化していない。
+- `write_file` / `edit_file` は `llama-server` の実行ユーザー権限でファイルを書き込む。systemd user service では通常 `onoue` 権限になり、llama.cpp 側に専用 sandbox や書き込み先制限はない。
 - `mcp-searxng` は HTTP mode で起動し、Web UI には `http://127.0.0.1:3000/mcp` を `useProxy = true` で登録する想定。
 - SearXNG 側は JSON format が有効である必要がある。
 - Memos MCP は Memos 本体の `https://memos.showway.biz/mcp` を使う。Web UI 側では Authorization を有効にして Bearer PAT を設定する。
 - Memos MCP も `useProxy = true` で llama-server proxy 経由にする想定。
+- 次に試す MCP 候補は fetch / URL reader、filesystem read-only、git read-only の順。stdio 専用 server は Web UI に直接 URL 登録できないため、HTTP proxy / adapter が必要。
+- MCP server を増やす場合は read-only、ローカル待ち受け、許可ディレクトリ限定、token は環境変数渡しを基本にする。
