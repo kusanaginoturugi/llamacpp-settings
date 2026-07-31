@@ -348,7 +348,9 @@ ExecStart=/usr/bin/llama-server \
   --models-max 1 \
   --jinja \
   --path /home/onoue/src/oss/llama.cpp/tools/ui/dist \
-  --tools read_file,file_glob_search,grep_search,get_datetime
+  --tools read_file,file_glob_search,grep_search,get_datetime \
+  --cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9" \
+  --ui-mcp-proxy
 Restart=on-failure
 RestartSec=3
 
@@ -365,6 +367,12 @@ WantedBy=default.target
 この設定では、日本語化済みの Web UI dist を指定している。
 
 `--tools` は llama.cpp のツール呼び出しで使えるツールを指定する。
+
+`--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"` は
+Offline-llm-translator ブラウザ拡張機能から llama-server にアクセスするために必要。
+拡張機能の ID が変わった場合は、この origin も差し替える。
+
+`--ui-mcp-proxy` は llama-server の Web UI から MCP を使うために必要。
 
 日本語化された Web UI の設定画面例。
 
@@ -386,6 +394,162 @@ curl http://127.0.0.1:8080/v1/models
 
 手元で毎回 `llama serve -hf repo/model:quant` を起動し直さなくて済むので、
 Local Translator、xTranslator、OpenAI 互換クライアントから使いやすい。
+
+## MCP を使う
+
+llama.cpp Web UI から MCP サーバーを使う場合は、`llama-server` に `--ui-mcp-proxy` を付けて起動する。
+この設定では systemd service に追加済み。
+
+Web UI の MCP 設定では、ローカルや外部の MCP server URL を登録する。
+ブラウザから直接 MCP サーバーへ接続して CORS で止まる場合は、`Use llama-server proxy` を有効にする。
+
+![Memos MCP 設定画面](docs/images/memos-mcp-config.png)
+
+### mcp-searxng
+
+[`ihor-sokoliuk/mcp-searxng`](https://github.com/ihor-sokoliuk/mcp-searxng) は
+SearXNG を MCP ツールとして使うためのサーバー。
+llama.cpp Web UI から使う場合は、`mcp-searxng` を HTTP mode で起動し、Web UI の MCP 設定に登録する。
+
+前提として SearXNG 側で JSON 出力が有効になっている必要がある。
+SearXNG の `settings.yml` に `json` が入っているか確認する。
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+SearXNG の JSON API が返るか確認する。
+
+```sh
+curl 'http://127.0.0.1:8088/search?q=test&format=json'
+```
+
+`127.0.0.1:8088` は SearXNG の URL に合わせて変える。
+
+`mcp-searxng` をインストールする。
+
+```sh
+npm install -g mcp-searxng
+```
+
+HTTP mode で起動する。
+
+```sh
+SEARXNG_URL=http://127.0.0.1:8088 \
+MCP_HTTP_PORT=3000 \
+mcp-searxng
+```
+
+疎通確認。
+
+```sh
+curl http://127.0.0.1:3000/health
+```
+
+systemd user service として常駐させる場合は
+`/home/onoue/.config/systemd/user/mcp-searxng.service` を作成する。
+
+```ini
+[Unit]
+Description=mcp-searxng server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=SEARXNG_URL=http://127.0.0.1:8088
+Environment=MCP_HTTP_PORT=3000
+ExecStart=/usr/bin/env mcp-searxng
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+反映する。
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now mcp-searxng.service
+systemctl --user status mcp-searxng.service
+```
+
+llama.cpp Web UI 側では MCP サーバーに次を追加する。
+
+```json
+[
+  {
+    "id": "searxng",
+    "name": "SearXNG",
+    "url": "http://127.0.0.1:3000/mcp",
+    "enabled": true,
+    "requestTimeoutSeconds": 300,
+    "useProxy": true
+  }
+]
+```
+
+`useProxy = true` は llama-server の `--ui-mcp-proxy` を経由して MCP サーバーへ接続するための指定。
+ブラウザからローカル MCP サーバーへ直接アクセスして CORS で止まる場合でも、proxy 経由なら使える。
+
+Web UI で接続できたら、MCP ツール一覧に `searxng_web_search` と `web_url_read` が出る。
+検索が失敗する場合は、まず SearXNG の JSON API と `mcp-searxng` の `/health` を確認する。
+
+### Memos MCP
+
+[`usememos/memos`](https://github.com/usememos/memos) は組み込み MCP server を持っている。
+別プロセスの MCP server を追加で立てる必要はない。
+Memos v0.27.0 以降では、Memos 本体の `/mcp` endpoint を Streamable HTTP transport として使える。
+
+Memos 側で Personal Access Token を作成する。
+
+1. Memos のユーザー設定を開く
+2. Access Tokens で新しい token を作る
+3. 表示された token を控える
+
+Web UI の MCP 設定に次を登録する。
+
+```json
+[
+  {
+    "id": "memos",
+    "name": "Memos",
+    "url": "https://memos.showway.biz/mcp",
+    "enabled": true,
+    "requestTimeoutSeconds": 300,
+    "useProxy": true
+  }
+]
+```
+
+Authorization を有効にして、Bearer token を設定する。
+
+```text
+Bearer memos_pat_...
+```
+
+`useProxy = true` は llama-server の `--ui-mcp-proxy` を経由して Memos に接続するための指定。
+ブラウザから Memos の `/mcp` に直接接続して origin check や CORS で止まる場合でも、proxy 経由なら使える。
+
+接続できたら、MCP ツール一覧に Memos のツールが出る。
+代表的なツールは次の通り。
+
+- `memo_list_memos`
+- `memo_create_memo`
+- `memo_get_memo`
+- `memo_update_memo`
+- `memo_delete_memo`
+- `memo_list_memo_comments`
+- `memo_create_memo_comment`
+- `attachment_list_attachments`
+- `auth_get_current_user`
+
+認証エラーになる場合は token を作り直す。
+`403` になる場合は、Memos 側の instance URL / origin 設定か、Web UI 側の proxy 設定を確認する。
 
 ## サービスを反映する
 

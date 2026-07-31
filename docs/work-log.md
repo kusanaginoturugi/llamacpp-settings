@@ -33,3 +33,9 @@
 - GGUF 内蔵の chat template を使うため、通常は `chat-template-file` を書かなくてよいことを追記した。
 - `ui = true` / `ui = false` と `[*] ui = false` の使い分けを追記した。
 - モデル追加手順の INI 例から `chat-template-file` を削除した。
+- README の systemd service 例に `--cors-origins` と `--ui-mcp-proxy` を追加した。
+- `--cors-origins` は Offline-llm-translator ブラウザ拡張機能用、`--ui-mcp-proxy` は Web UI から MCP を使うための設定として説明した。
+- README に `ihor-sokoliuk/mcp-searxng` を HTTP mode で起動し、llama.cpp Web UI の MCP 設定へ追加する手順を追記した。
+- `mcp-searxng` 用の systemd user service 例と、SearXNG JSON API / `/health` の確認手順を追記した。
+- README の MCP 節を整理し、`usememos/memos` の組み込み MCP server を llama.cpp Web UI へ登録する手順を追記した。
+- Memos MCP 設定画面のスクリーンショットを `docs/images/memos-mcp-config.png` に追加した。
