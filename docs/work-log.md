@@ -25,3 +25,11 @@
 - `docs/images/llama-ui-settings-ja.png` は 1242x1181 の PNG。
 - OpenAI 互換 API の JSON にある `"model"` は `/v1/models` で見えるモデル ID を指定するものとして記載した。
 - `llama-cli` が `/usr/bin/llama-cli` に存在することを確認した。
+
+## 2026-07-31
+
+- README の `models.ini` 例を現行設定に合わせて更新した。
+- README から通常運用での `chat-template-file` 指定を削除した。
+- GGUF 内蔵の chat template を使うため、通常は `chat-template-file` を書かなくてよいことを追記した。
+- `ui = true` / `ui = false` と `[*] ui = false` の使い分けを追記した。
+- モデル追加手順の INI 例から `chat-template-file` を削除した。

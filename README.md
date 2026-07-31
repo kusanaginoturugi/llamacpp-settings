@@ -9,7 +9,6 @@
 - `llama-server` が `/usr/bin/llama-server` にある
 - llama.cpp は AUR パッケージ `llama.cpp-cuda` で入れる
 - モデル設定ファイルを `/etc/llama.cpp/models.ini` に置く
-- Jinja チャットテンプレートを `/home/onoue/.local/lib/models/` に置く
 - llama.cpp の Web UI が `/home/onoue/src/oss/llama.cpp/tools/ui/dist` にある
 - server は `127.0.0.1:8080` で待ち受ける
 
@@ -64,29 +63,18 @@ CUDA が使えていれば、起動ログに CUDA / GPU backend の初期化ロ�
 ```sh
 sudo mkdir -p /etc/llama.cpp
 mkdir -p /home/onoue/.config/systemd/user
-mkdir -p /home/onoue/.local/lib/models
 ```
 
-## chat-template を配置する
+## chat-template の扱い
 
-このリポジトリの `models/` に、`models.ini` から参照する Jinja テンプレートを置いている。
+通常は `models.ini` に `chat-template-file` を書かない。
+Hugging Face から取得する GGUF には chat template が含まれているので、llama.cpp 側に任せる。
 
-```text
-models/
-├── Ornith-1.0-9B-GGUF.jinja
-├── gemma-4-E4B-it-GGUF.jinja
-├── gemma-4.jinja
-└── gemma.jinja
-```
+`chat-template-file` を固定すると、モデル側や llama.cpp 側のテンプレート更新に追従できない。
+古いテンプレートを使い続けると、tool calling、reasoning、system message、マルチモーダル対応などで不具合の原因になる。
 
-設定先へコピーする。
-
-```sh
-cp models/*.jinja /home/onoue/.local/lib/models/
-```
-
-`models.ini` の `chat-template-file` は `/home/onoue/.local/lib/models/*.jinja` を参照する。
-テンプレートを更新したら、`llama.cpp.service` を再起動する。
+カスタムしたい場合だけ `chat-template-file = /path/to/template.jinja` を追加する。
+その場合はテンプレートの保守も自分でやる。
 
 ## モデル設定
 
@@ -95,9 +83,25 @@ cp models/*.jinja /home/onoue/.local/lib/models/
 ```ini
 version = 1
 
+[*]
+ui = false
+
+[gemma-4-E4B-it-qat]
+ui = true
+hf = unsloth/gemma-4-E4B-it-qat-GGUF:UD-Q4_K_XL
+n-gpu-layers = all
+ctx-size = 393216
+parallel = 4
+stop-timeout = 10
+spec-type = draft-mtp
+spec-draft-n-max = 4
+temp = 1.0
+top-p = 0.95
+top-k = 64
+
 [gemma-4-E4B-it]
+ui = true
 hf = unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/gemma-4-E4B-it-GGUF.jinja
 n-gpu-layers = all
 ctx-size = 393216
 parallel = 4
@@ -109,52 +113,66 @@ top-p = 0.95
 top-k = 64
 
 [ornith-1.0-9b]
+ui = true
 hf-repo = deepreinforce-ai/Ornith-1.0-9B-GGUF
 hf-file = ornith-1.0-9b-Q4_K_M.gguf
-chat-template-file = /home/onoue/.local/lib/models/Ornith-1.0-9B-GGUF.jinja
-n-gpu-layers = all
-ctx-size = 65536
-parallel = 1
-stop-timeout = 10
-
-[bonsai-27b]
-hf-repo = prism-ml/Bonsai-27B-gguf
-hf-file = Bonsai-27B-Q1_0.gguf
 n-gpu-layers = all
 ctx-size = 65536
 parallel = 1
 stop-timeout = 10
 
 [translategemma-4b]
+ui = true
 hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/gemma.jinja
 ctx-size = 16384
 parallel = 4
 n-gpu-layers = all
 stop-timeout = 10
 
 [translategemma-12b]
+ui = true
 hf = mradermacher/translategemma-12b-it-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/gemma.jinja
 ctx-size = 16384
 parallel = 4
 n-gpu-layers = all
 stop-timeout = 10
 
+[gemma4-coding-12b]
+ui = true
+model = /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf
+ctx-size = 65536
+parallel = 1
+n-gpu-layers = all
+stop-timeout = 10
+
+# [translategemma-4b-translate] / [translategemma-12b-translate]
+# Local Translator や xTranslator 向けの設定
+# c および parallel を 1 にセットし、GPU使用メモリを少なくして
+# 両方を 12GB メモリに載せて、使いわけたい場合に使用する
+# 単語や短文は 4b で高速に翻訳し、長文またはエラー時には 12b を使用する
 [translategemma-4b-translate]
+ui = true
 hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/gemma.jinja
 ctx-size = 4096
 parallel = 1
 n-gpu-layers = 99
 stop-timeout = 10
 
 [translategemma-12b-translate]
+ui = true
 hf = mradermacher/translategemma-12b-it-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/gemma.jinja
 ctx-size = 4096
 parallel = 1
 n-gpu-layers = 99
+stop-timeout = 10
+
+[bonsai-27b]
+ui = false
+hf-repo = prism-ml/Bonsai-27B-gguf
+hf-file = Bonsai-27B-Q1_0.gguf
+n-gpu-layers = all
+ctx-size = 65536
+parallel = 1
 stop-timeout = 10
 ```
 
@@ -172,6 +190,9 @@ hf = unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
 hf-repo = deepreinforce-ai/Ornith-1.0-9B-GGUF
 hf-file = ornith-1.0-9b-Q4_K_M.gguf
 ```
+
+`ui = true` は Web UI に表示するモデル、`ui = false` は Web UI から隠すモデル。
+`[*] ui = false` を先に書いておくと、明示的に `ui = true` を付けたモデルだけ Web UI に出せる。
 
 ## モデルを追加する手順
 
@@ -203,6 +224,7 @@ llama-cli -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
 
 推奨値が書かれている場合は、それを `models.ini` に反映する候補にする。
 推奨値が不明な場合は、まず保守的に `ctx-size = 4096`、`parallel = 1` で試す。
+chat template は確認だけしておく。通常は GGUF 内蔵のものを使うので、`chat-template-file` は追加しない。
 
 メモリ使用量を見ながら、`ctx-size` と `parallel` を上げる。
 
@@ -268,7 +290,7 @@ http://127.0.0.1:18080
 ```ini
 [new-model-name]
 hf = owner/model-GGUF:Q4_K_M
-chat-template-file = /home/onoue/.local/lib/models/template-name.jinja
+ui = true
 n-gpu-layers = all
 ctx-size = 4096
 parallel = 1
@@ -284,7 +306,7 @@ top-k = 40
 [new-model-name]
 hf-repo = owner/model-GGUF
 hf-file = model-Q4_K_M.gguf
-chat-template-file = /home/onoue/.local/lib/models/template-name.jinja
+ui = true
 n-gpu-layers = all
 ctx-size = 4096
 parallel = 1
@@ -336,7 +358,8 @@ WantedBy=default.target
 
 `--models-max 1` は同時ロードするモデル数の上限。VRAM を抑えたい場合はこのままでよい。
 
-`--jinja` は `chat-template-file` を使うために必要。
+`--jinja` は Jinja chat template を有効にするために必要。
+通常は GGUF 内の chat template を使うので、`models.ini` 側に `chat-template-file` は書かない。
 
 `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は llama.cpp の Web UI を差し替えるために使う。
 この設定では、日本語化済みの Web UI dist を指定している。
@@ -441,7 +464,7 @@ llama serve -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
 Hugging Face 上のモデルが更新された場合も、キャッシュ側は必要に応じて更新される。
 モデル取得と更新確認を llama.cpp 側に任せられるので、手で GGUF を探して落としてくる手間が減る。
 
-この README の systemd 設定では、Hugging Face から取得するモデルは
+この README の systemd 設定では、基本的にモデル取得を
 `hf` / `hf-repo` / `hf-file` に任せる。
 `/etc/llama.cpp/models.ini` には、各セクションごとにモデル取得元を書く。
 
