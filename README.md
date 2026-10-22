@@ -1,14 +1,17 @@
 # llama.cpp 設定手順
 
-このメモは `/etc/llama.cpp/models.ini` と
+このメモは `~/.config/llama.cpp/models.ini` と
 `/home/onoue/.config/systemd/user/llama.cpp.service` を使って、
 `llama-server` を systemd user service として動かすための手順。
+
+実際に使っている `models.ini` は、このリポジトリの [`models.ini`](models.ini) に置いている。
+自宅と職場の PC で同じプリセットを使うため、`~/.config/llama.cpp/models.ini` はこのファイルへのシンボリックリンクにする。
 
 ## 前提
 
 - `llama-server` が `/usr/bin/llama-server` にある
 - llama.cpp は AUR パッケージ `llama.cpp-cuda` で入れる
-- モデル設定ファイルを `/etc/llama.cpp/models.ini` に置く
+- モデル設定ファイルは、このリポジトリの `models.ini` を `~/.config/llama.cpp/models.ini` にリンクして使う
 - llama.cpp の Web UI が `/home/onoue/src/oss/llama.cpp/tools/ui/dist` にある
 - server は `127.0.0.1:8080` で待ち受ける
 
@@ -61,9 +64,12 @@ CUDA が使えていれば、起動ログに CUDA / GPU backend の初期化ロ�
 ## ディレクトリを作る
 
 ```sh
-sudo mkdir -p /etc/llama.cpp
-mkdir -p /home/onoue/.config/systemd/user
+mkdir -p ~/.config/llama.cpp /home/onoue/.config/systemd/user
+ln -sf ~/src/llamacpp-settings/models.ini ~/.config/llama.cpp/models.ini
 ```
+
+プリセットを足したり変えたりしたら、このリポジトリでコミットして push する。
+もう片方の PC では `git pull` して `systemctl --user restart llama.cpp` すればそろう。
 
 ## chat-template の扱い
 
@@ -78,7 +84,7 @@ Hugging Face から取得する GGUF には chat template が含まれている�
 
 ## モデル設定
 
-`/etc/llama.cpp/models.ini` を作成する。
+`~/.config/llama.cpp/models.ini`（このリポジトリの `models.ini`）に書く。書き方の例:
 
 ```ini
 version = 1
@@ -285,7 +291,7 @@ http://127.0.0.1:18080
 - 長めの入力で落ちないか
 - VRAM が想定内に収まるか
 
-問題なければ `/etc/llama.cpp/models.ini` にセクションを追加する。
+問題なければ `~/.config/llama.cpp/models.ini` にセクションを追加する。
 
 ```ini
 [new-model-name]
@@ -344,7 +350,7 @@ Type=simple
 ExecStart=/usr/bin/llama-server \
   --host 127.0.0.1 \
   --port 8080 \
-  --models-preset /etc/llama.cpp/models.ini \
+  --models-preset /home/onoue/.config/llama.cpp/models.ini \
   --models-max 1 \
   --jinja \
   --path /home/onoue/src/oss/llama.cpp/tools/ui/dist \
@@ -680,7 +686,7 @@ Hugging Face 上のモデルが更新された場合も、キャッシュ側は�
 
 この README の systemd 設定では、基本的にモデル取得を
 `hf` / `hf-repo` / `hf-file` に任せる。
-`/etc/llama.cpp/models.ini` には、各セクションごとにモデル取得元を書く。
+`~/.config/llama.cpp/models.ini` には、各セクションごとにモデル取得元を書く。
 
 ```text
 [translategemma-4b-translate]
