@@ -82,6 +82,9 @@ Hugging Face から取得する GGUF には chat template が含まれている�
 カスタムしたい場合だけ `chat-template-file = /path/to/template.jinja` を追加する。
 その場合はテンプレートの保守も自分でやる。
 
+使っているテンプレートは、このリポジトリの `models/` に置き、`models.ini` からは
+`/home/onoue/src/llamacpp-settings/models/〜.jinja` を指す。自宅と職場で同じファイルを使うため。
+
 ## モデル設定
 
 `~/.config/llama.cpp/models.ini`（このリポジトリの `models.ini`）に書く。書き方の例:
