@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hugging Face のキャッシュから、モデルを fzf で選んで消す。
 
-  hf-rm              一覧を fzf で出す（Tab で複数選べる）。選んだものを確かめてから消す
+  hf-rm              一覧を fzf で出す（Tab で複数選べる）。選んだものを確かめてから消し、また一覧に戻る。Esc で終わる
   hf-rm --dry-run    消さずに、何が消えるかだけ表示する
 
 一覧には 2 種類の行がある。
@@ -150,31 +150,23 @@ def hf_rm(picked, *flags):
             subprocess.run(["hf", "cache", "rm", *flags, *tgt], check=True)
 
 
-def main():
-    if not os.path.isdir(HUB):
-        raise SystemExit(f"キャッシュがありません: {HUB}")
-    rows = scan()
-    if len(sys.argv) > 2 and sys.argv[1] == "--preview":
-        return preview(rows, int(sys.argv[2]))
-    dry = "--dry-run" in sys.argv[1:] or "-n" in sys.argv[1:]
-    if not shutil.which("fzf"):
-        raise SystemExit("fzf が必要です")
-    if not shutil.which("hf"):
-        raise SystemExit("hf（huggingface_hub の CLI）が必要です")
+def pick(rows):
+    """fzf で選ばせる。Esc か Ctrl-C で抜けたら空のリスト。"""
     menu = "\n".join(label(i, r) for i, r in enumerate(rows))
     total = sum(r["size"] for r in rows if r["kind"] in ("repo", "broken"))
     res = subprocess.run(
         ["fzf", "--multi", "--delimiter", "\t", "--with-nth", "2..", "--reverse",
-         "--header", f"消すものを選ぶ（Tab で複数、Enter で決定）  {HUB}  合計 {human(total)}",
+         "--header", f"消すものを選ぶ（Tab で複数、Enter で決定、Esc で終わる）  {HUB}  合計 {human(total)}",
          "--preview", f"{sys.executable} {os.path.abspath(__file__)} --preview {{1}}", "--preview-window", "down,40%"],
-        input=menu, capture_output=False, stdout=subprocess.PIPE, text=True)
+        input=menu, stdout=subprocess.PIPE, text=True)
     picked = [rows[int(line.split("\t", 1)[0])] for line in res.stdout.splitlines() if line.strip()]
-    if not picked:
-        return
     # リポジトリ丸ごとを選んだら、同じリポジトリの量子化の行は重ねて消さない
     whole = {r["repo"] for r in picked if r["kind"] in ("repo", "broken")}
-    picked = [r for r in picked if r["kind"] not in ("quant", "mmproj") or r["repo"] not in whole]
+    return [r for r in picked if r["kind"] not in ("quant", "mmproj") or r["repo"] not in whole]
 
+
+def remove(picked, dry):
+    """選んだものを確かめてから消す。消したら True。"""
     print("次のものを消します:")
     for r in picked:
         print(f"  [{r['kind']}] {human(r['size']):>7}  {r['repo']}" + (f"  {r['quant']}" if r["kind"] == "quant" else ""))
@@ -186,10 +178,10 @@ def main():
         for r in picked:
             if r["kind"] == "broken":
                 print(f"（消すフォルダ）{r['path']}")
-        return
+        return False
     if input("本当に消しますか？ [y/N] ").strip().lower() not in ("y", "yes"):
         print("やめました")
-        return
+        return False
     hf_rm(picked, "--yes")
     for r in picked:
         if r["kind"] == "broken":
@@ -200,7 +192,36 @@ def main():
             print(f"消しました: {real}")
     if any(r["users"] for r in picked):
         print("\nmodels.ini のプリセットが使っていたモデルを消しました。そのプリセットを次に使うと、もう一度ダウンロードされます。")
-    print("llama-server のモデル一覧に反映するには: systemctl --user restart llama.cpp")
+    return True
+
+
+def main():
+    if not os.path.isdir(HUB):
+        raise SystemExit(f"キャッシュがありません: {HUB}")
+    if len(sys.argv) > 2 and sys.argv[1] == "--preview":
+        return preview(scan(), int(sys.argv[2]))
+    dry = "--dry-run" in sys.argv[1:] or "-n" in sys.argv[1:]
+    if not shutil.which("fzf"):
+        raise SystemExit("fzf が必要です")
+    if not shutil.which("hf"):
+        raise SystemExit("hf（huggingface_hub の CLI）が必要です")
+    removed = False
+    # 消すたびに一覧を作り直して、また選べるようにする。fzf を Esc で抜けたら終わる
+    while True:
+        picked = pick(scan())
+        if not picked:
+            break
+        try:
+            removed |= remove(picked, dry)
+        except subprocess.CalledProcessError as e:
+            print(f"消せませんでした（{e}）")
+        try:
+            input("\nEnter で一覧に戻ります（Ctrl-C で終わる）")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+    if removed:
+        print("llama-server のモデル一覧に反映するには: systemctl --user restart llama.cpp")
 
 
 if __name__ == "__main__":
