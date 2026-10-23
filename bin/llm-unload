@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""llama-server（ルーターモード）に載っているモデルを、fzf で選んで降ろす。
+
+  llm-unload             載っているモデルを fzf で出す（Tab で複数選べる）。降ろしたらまた一覧に戻る。Esc で終わる
+  llm-unload -l          一覧を表示するだけ
+  llm-unload NAME...     名前を指定して降ろす
+  llm-unload --all       全部降ろす
+
+--models-max で決めた数までは、古いモデルを残したまま新しいモデルを読み込もうとする。
+VRAM が足りないと読み込みに失敗するので、使わないモデルはこれで降ろしておく。
+一覧には、モデルごとの VRAM の使用量（nvidia-smi で見たもの）を出す。
+
+  LLAMA_SERVER   llama-server の URL（既定 http://127.0.0.1:8080）
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.request
+
+SERVER = os.environ.get("LLAMA_SERVER", "http://127.0.0.1:8080").rstrip("/")
+
+
+def api(path, body=None):
+    req = urllib.request.Request(SERVER + path, data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def vram_by_port():
+    """モデルごとの子プロセスを --port で見分けて、使っている VRAM（MiB）を返す。"""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True).stdout
+    except FileNotFoundError:
+        return {}
+    used = {}
+    for line in out.splitlines():
+        pid, _, mib = line.partition(",")
+        try:
+            cmd = open(f"/proc/{pid.strip()}/cmdline").read().split("\0")
+        except OSError:
+            continue
+        if "--port" in cmd:
+            used[cmd[cmd.index("--port") + 1]] = int(mib)
+    return used
+
+
+def loaded():
+    """載っている（読み込み中も含む）モデルの (名前, 状態, VRAM MiB or None, GPU 層の設定) の一覧。"""
+    vram = vram_by_port()
+    rows = []
+    for m in api("/v1/models")["data"]:
+        st = m["status"]
+        if st["value"] == "unloaded":
+            continue
+        args = st.get("args", [])
+        port = args[args.index("--port") + 1] if "--port" in args else None
+        ngl = args[args.index("--n-gpu-layers") + 1] if "--n-gpu-layers" in args else ""
+        rows.append((m["id"], st["value"], vram.get(port), ngl))
+    return rows
+
+
+def label(r):
+    name, state, mib, ngl = r
+    where = "CPU" if ngl == "0" else (f"{mib / 1024:.1f}G" if mib else "-")
+    return f"{name}\t{where:>6}  {name}" + (f"  （{state}）" if state != "loaded" else "")
+
+
+def show(rows):
+    if not rows:
+        print("載っているモデルはありません")
+    for r in rows:
+        print(label(r).split("\t", 1)[1])
+
+
+def unload(names):
+    for n in names:
+        try:
+            api("/models/unload", {"model": n})
+            print(f"降ろしました: {n}")
+        except Exception as e:  # 名前の打ち間違いなど
+            print(f"降ろせませんでした: {n}（{e}）", file=sys.stderr)
+
+
+def pick(rows):
+    total = sum(r[2] or 0 for r in rows)
+    res = subprocess.run(
+        ["fzf", "--multi", "--delimiter", "\t", "--with-nth", "2..", "--reverse",
+         "--header", f"降ろすモデルを選ぶ（Tab で複数、Enter で決定、Esc で終わる）  VRAM 合計 {total / 1024:.1f}G"],
+        input="\n".join(label(r) for r in rows), stdout=subprocess.PIPE, text=True)
+    return [line.split("\t", 1)[0] for line in res.stdout.splitlines() if line.strip()]
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        return print(__doc__)
+    try:
+        rows = loaded()
+    except OSError as e:
+        raise SystemExit(f"llama-server につながりません: {SERVER}（{e}）")
+    if args and args[0] in ("-l", "--list"):
+        return show(rows)
+    if args and args[0] == "--all":
+        return unload([r[0] for r in rows])
+    if args:
+        return unload(args)
+    if not shutil.which("fzf"):
+        raise SystemExit("fzf が必要です")
+    # 降ろすたびに一覧を作り直す。何も載っていないか、Esc で抜けたら終わる
+    while rows:
+        names = pick(rows)
+        if not names:
+            break
+        unload(names)
+        rows = loaded()
+    show(rows)
+
+
+if __name__ == "__main__":
+    main()

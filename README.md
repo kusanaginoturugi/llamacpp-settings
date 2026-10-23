@@ -727,6 +727,23 @@ hf-rm             # Tab で複数選び、Enter で決定。確かめてから�
 - 消す処理は `hf cache rm` に任せる（blobs・refs・snapshots の後片付けまでやる）。`[broken]` だけはフォルダごと消す。
 - 消したあと、llama-server のモデル一覧に反映するには `systemctl --user restart llama.cpp`。
 
+## 載っているモデルを降ろす（llm-unload）
+
+`--models-max` は「同時に載せる個数」の上限で、VRAM の空きは見ない。上限の数までは古いモデルを残したまま
+新しいモデルを読み込もうとするので、VRAM が足りないと読み込みに失敗する（古いモデルが自動で降ろされるのは、
+上限の数を超えたときだけ）。使わないモデルは `bin/llm-unload` で降ろしておく。
+
+```sh
+ln -sf ~/src/llamacpp-settings/bin/llm-unload ~/.local/bin/llm-unload
+llm-unload -l          # 載っているモデルと、それぞれの VRAM 使用量
+llm-unload             # fzf で選んで降ろす（Tab で複数、Esc で終わる）
+llm-unload NAME...     # 名前を指定して降ろす
+llm-unload --all       # 全部降ろす
+```
+
+- 中身は llama-server の `POST /models/unload`（`{"model": "名前"}`）を呼んでいるだけ。
+- VRAM はモデルごとの子プロセスを `--port` で見分けて、nvidia-smi の値を出す。`n-gpu-layers = 0` のモデルは「CPU」と出る。
+
 ## VRAM 調整指針
 
 VRAM 使用量に効く主な設定は `ctx-size`、`parallel`、`n-gpu-layers`、`--models-max`。
