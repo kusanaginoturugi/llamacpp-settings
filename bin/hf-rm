@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Hugging Face のキャッシュから、モデルを fzf で選んで消す。
+
+  hf-rm              一覧を fzf で出す（Tab で複数選べる）。選んだものを確かめてから消す
+  hf-rm --dry-run    消さずに、何が消えるかだけ表示する
+
+一覧には 2 種類の行がある。
+  [repo]   リポジトリ丸ごと（ダウンロードした全部の量子化と、mmproj などの付属ファイル）
+  [quant]  リポジトリの中の 1 つの量子化（例 Q4_K_M）。同じ量子化の付属ファイル
+           （分割ファイル、MTP 用の mtp-*.gguf など）もまとめて消す
+  [mmproj] リポジトリの中の、画像入力用の付属ファイル（mmproj-*.gguf）
+  [broken] 途中で止まったダウンロードなど、中身のファイルがない壊れたリポジトリ
+
+消す処理は `hf cache rm` に任せる（blobs・refs・snapshots の後片付けまでやってくれる）。
+models.ini（~/.config/llama.cpp/models.ini）のプリセットが使っているものには「使用中」と出す。
+
+  HF_HUB_CACHE / HF_HOME   キャッシュの場所（既定 ~/.cache/huggingface/hub）
+  LLAMA_MODELS_INI         プリセットのファイル（既定 ~/.config/llama.cpp/models.ini）
+"""
+import configparser
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+HUB = os.environ.get("HF_HUB_CACHE") or os.path.join(
+    os.environ.get("HF_HOME", os.path.join(HOME, ".cache", "huggingface")), "hub")
+INI = os.environ.get("LLAMA_MODELS_INI", os.path.join(HOME, ".config", "llama.cpp", "models.ini"))
+QUANT = re.compile(r"((?:UD-)?(?:I?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32))(?=[-.]|$)", re.I)
+
+
+def human(n):
+    for unit in ("B", "K", "M", "G", "T"):
+        if n < 1024 or unit == "T":
+            return f"{n:.1f}{unit}" if unit != "B" else f"{n}B"
+        n /= 1024
+
+
+def file_size(path):
+    try:
+        return os.stat(path).st_size  # snapshots のファイルは blobs へのリンクなので、たどった先の大きさ
+    except OSError:
+        return 0
+
+
+def dir_size(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            p = os.path.join(root, f)
+            if not os.path.islink(p):
+                total += os.lstat(p).st_size
+    return total
+
+
+def quant_of(name):
+    """ファイル名から量子化の種類を取る。画像入力用の mmproj-*.gguf は量子化ではなく、まとめて「mmproj」にする。"""
+    if os.path.basename(name).lower().startswith("mmproj"):
+        return "mmproj"
+    m = QUANT.search(os.path.basename(name))
+    return m.group(1).upper() if m else None
+
+
+def presets():
+    """models.ini から (プリセット名, リポジトリ, 量子化 or None, ファイル名 or None) を集める。"""
+    out = []
+    if not os.path.exists(INI):
+        return out
+    cp = configparser.ConfigParser(interpolation=None, strict=False)
+    with open(INI) as f:  # 先頭の「version = 1」はどのセクションにも属さないので、ダミーのセクションを付けて読む
+        cp.read_string("[__top__]\n" + f.read())
+    for name in cp.sections():
+        sec = cp[name]
+        if "hf" in sec:
+            repo, _, q = sec["hf"].strip().partition(":")
+            out.append((name, repo, q.upper() or None, None))
+        elif "hf-repo" in sec:
+            out.append((name, sec["hf-repo"].strip(), None, sec.get("hf-file", "").strip() or None))
+    return out
+
+
+def scan():
+    """キャッシュの中を見て、選べる行の一覧を作る。"""
+    rows, used = [], presets()
+    for d in sorted(os.listdir(HUB)):
+        if not d.startswith("models--"):
+            continue
+        path = os.path.join(HUB, d)
+        repo = d[len("models--"):].replace("--", "/")
+        snap = os.path.join(path, "snapshots")
+        users = [p for p in used if p[1].lower() == repo.lower()]
+        if not os.path.isdir(snap) or not any(files for _, _, files in os.walk(snap)):
+            rows.append({"kind": "broken", "repo": repo, "path": path, "size": dir_size(path), "files": [], "users": users})
+            continue
+        files = sorted({os.path.relpath(os.path.join(r, f), os.path.join(snap, rev))
+                        for rev in os.listdir(snap) for r, _, fs in os.walk(os.path.join(snap, rev)) for f in fs})
+        sizes = {f: max(file_size(os.path.join(snap, rev, f)) for rev in os.listdir(snap)) for f in files}
+        rows.append({"kind": "repo", "repo": repo, "path": path, "size": dir_size(path), "files": files, "users": users})
+        groups = {}
+        for f in files:
+            q = quant_of(f)
+            if q and f.endswith(".gguf"):
+                groups.setdefault(q, []).append(f)
+        if len(groups) > 1 or (groups and len(files) > sum(map(len, groups.values()))):
+            for q, fs in sorted(groups.items()):
+                if q == "mmproj":  # mmproj を使うかはプリセット次第なので、そのリポジトリを使うプリセットは全部出す
+                    qusers = users
+                else:
+                    qusers = [p for p in users if (p[2] and p[2] == q) or (p[3] and p[3] in fs)]
+                rows.append({"kind": "mmproj" if q == "mmproj" else "quant", "repo": repo, "quant": q, "path": path, "size": sum(sizes[f] for f in fs),
+                             "files": fs, "users": qusers})
+    return rows
+
+
+def label(i, r):
+    name = r["repo"] + (f"  {r['quant']}" if r["kind"] == "quant" else "")
+    mark = "  使用中: " + ", ".join(p[0] for p in r["users"]) if r["users"] else ""
+    return f"{i}\t[{r['kind']}]\t{human(r['size']):>7}  {name}{mark}"
+
+
+def preview(rows, i):
+    r = rows[i]
+    print(f"{r['repo']}  ({r['kind']}, {human(r['size'])})\n")
+    if r["kind"] == "broken":
+        print("snapshots がない壊れたリポジトリ（途中で止まったダウンロードなど）。フォルダごと消す。")
+    for f in r["files"]:
+        print("  " + f)
+    if r["users"]:
+        print("\nmodels.ini のプリセットが使っている:")
+        for p in r["users"]:
+            print(f"  [{p[0]}]  {p[1]}" + (f":{p[2]}" if p[2] else "") + (f"  {p[3]}" if p[3] else ""))
+
+
+def targets(r):
+    if r["kind"] == "repo":
+        return [f"model/{r['repo']}"]
+    if r["kind"] in ("quant", "mmproj"):
+        return [f"hf://models/{r['repo']}/{f}" for f in r["files"]]
+    return []
+
+
+def hf_rm(picked, *flags):
+    """hf cache rm を呼ぶ。リポジトリ丸ごとと、ファイル単位は一度に渡せないので分けて呼ぶ。"""
+    repos = [t for r in picked if r["kind"] == "repo" for t in targets(r)]
+    files = [t for r in picked if r["kind"] in ("quant", "mmproj") for t in targets(r)]
+    for tgt in (repos, files):
+        if tgt:
+            subprocess.run(["hf", "cache", "rm", *flags, *tgt], check=True)
+
+
+def main():
+    if not os.path.isdir(HUB):
+        raise SystemExit(f"キャッシュがありません: {HUB}")
+    rows = scan()
+    if len(sys.argv) > 2 and sys.argv[1] == "--preview":
+        return preview(rows, int(sys.argv[2]))
+    dry = "--dry-run" in sys.argv[1:] or "-n" in sys.argv[1:]
+    if not shutil.which("fzf"):
+        raise SystemExit("fzf が必要です")
+    if not shutil.which("hf"):
+        raise SystemExit("hf（huggingface_hub の CLI）が必要です")
+    menu = "\n".join(label(i, r) for i, r in enumerate(rows))
+    total = sum(r["size"] for r in rows if r["kind"] in ("repo", "broken"))
+    res = subprocess.run(
+        ["fzf", "--multi", "--delimiter", "\t", "--with-nth", "2..", "--reverse",
+         "--header", f"消すものを選ぶ（Tab で複数、Enter で決定）  {HUB}  合計 {human(total)}",
+         "--preview", f"{sys.executable} {os.path.abspath(__file__)} --preview {{1}}", "--preview-window", "down,40%"],
+        input=menu, capture_output=False, stdout=subprocess.PIPE, text=True)
+    picked = [rows[int(line.split("\t", 1)[0])] for line in res.stdout.splitlines() if line.strip()]
+    if not picked:
+        return
+    # リポジトリ丸ごとを選んだら、同じリポジトリの量子化の行は重ねて消さない
+    whole = {r["repo"] for r in picked if r["kind"] in ("repo", "broken")}
+    picked = [r for r in picked if r["kind"] not in ("quant", "mmproj") or r["repo"] not in whole]
+
+    print("次のものを消します:")
+    for r in picked:
+        print(f"  [{r['kind']}] {human(r['size']):>7}  {r['repo']}" + (f"  {r['quant']}" if r["kind"] == "quant" else ""))
+        for p in r["users"]:
+            print(f"      ! models.ini のプリセット [{p[0]}] が使っています")
+    print(f"  合計 {human(sum(r['size'] for r in picked))}")
+    if dry:
+        hf_rm(picked, "--dry-run")
+        for r in picked:
+            if r["kind"] == "broken":
+                print(f"（消すフォルダ）{r['path']}")
+        return
+    if input("本当に消しますか？ [y/N] ").strip().lower() not in ("y", "yes"):
+        print("やめました")
+        return
+    hf_rm(picked, "--yes")
+    for r in picked:
+        if r["kind"] == "broken":
+            real = os.path.realpath(r["path"])
+            if os.path.dirname(real) != os.path.realpath(HUB):  # キャッシュの外は消さない
+                raise SystemExit(f"キャッシュの外なので消しません: {real}")
+            shutil.rmtree(real)
+            print(f"消しました: {real}")
+    if any(r["users"] for r in picked):
+        print("\nmodels.ini のプリセットが使っていたモデルを消しました。そのプリセットを次に使うと、もう一度ダウンロードされます。")
+    print("llama-server のモデル一覧に反映するには: systemctl --user restart llama.cpp")
+
+
+if __name__ == "__main__":
+    main()

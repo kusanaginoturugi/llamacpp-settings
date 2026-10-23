@@ -710,6 +710,22 @@ du -sh /home/onoue/.cache/huggingface
 
 GGUF は数 GB から数十 GB になる。複数モデルを試すなら、空き容量を先に見ておく。
 
+## モデルを消す（hf-rm）
+
+`bin/hf-rm` で、Hugging Face のキャッシュ（`~/.cache/huggingface/hub`）にあるモデルを fzf で選んで消せる。
+
+```sh
+ln -sf ~/src/llamacpp-settings/bin/hf-rm ~/.local/bin/hf-rm
+hf-rm --dry-run   # 消さずに、何が消えるかだけ見る
+hf-rm             # Tab で複数選び、Enter で決定。確かめてから消す
+```
+
+- 行の種類は `[repo]`（リポジトリ丸ごと）、`[quant]`（1 つの量子化と、その分割ファイルや mtp-*.gguf）、
+  `[mmproj]`（画像入力用の付属ファイル）、`[broken]`（途中で止まったダウンロードなど、中身のない壊れたリポジトリ）。
+- `models.ini` のプリセットが使っているものには「使用中」と出る。消しても、そのプリセットを次に使うともう一度ダウンロードされる。
+- 消す処理は `hf cache rm` に任せる（blobs・refs・snapshots の後片付けまでやる）。`[broken]` だけはフォルダごと消す。
+- 消したあと、llama-server のモデル一覧に反映するには `systemctl --user restart llama.cpp`。
+
 ## VRAM 調整指針
 
 VRAM 使用量に効く主な設定は `ctx-size`、`parallel`、`n-gpu-layers`、`--models-max`。
