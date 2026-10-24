@@ -138,14 +138,6 @@ parallel = 4
 n-gpu-layers = all
 stop-timeout = 10
 
-[translategemma-12b]
-ui = true
-hf = mradermacher/translategemma-12b-it-GGUF:Q4_K_M
-ctx-size = 16384
-parallel = 4
-n-gpu-layers = all
-stop-timeout = 10
-
 [gemma4-coding-12b]
 ui = true
 model = /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf
@@ -154,22 +146,12 @@ parallel = 1
 n-gpu-layers = all
 stop-timeout = 10
 
-# [translategemma-4b-translate] / [translategemma-12b-translate]
+# [translategemma-4b-translate]
 # Local Translator や xTranslator 向けの設定
-# c および parallel を 1 にセットし、GPU使用メモリを少なくして
-# 両方を 12GB メモリに載せて、使いわけたい場合に使用する
-# 単語や短文は 4b で高速に翻訳し、長文またはエラー時には 12b を使用する
+# c および parallel を 1 にセットし、GPU使用メモリを少なくする
 [translategemma-4b-translate]
 ui = true
 hf = mradermacher/translategemma-4b-it-GGUF:Q4_K_M
-ctx-size = 4096
-parallel = 1
-n-gpu-layers = 99
-stop-timeout = 10
-
-[translategemma-12b-translate]
-ui = true
-hf = mradermacher/translategemma-12b-it-GGUF:Q4_K_M
 ctx-size = 4096
 parallel = 1
 n-gpu-layers = 99
@@ -766,20 +748,40 @@ VRAM 使用量に効く主な設定は `ctx-size`、`parallel`、`n-gpu-layers`�
 4. 同時に使わないモデルを unload する、または `--models-max 1` を維持する
 5. 量子化の軽い GGUF に変える
 
-翻訳用の `translategemma-4b-translate` / `translategemma-12b-translate` は、
-`ctx-size = 4096`、`parallel = 1` にして VRAM を抑える設定。
+翻訳用の `translategemma-4b-translate` は、`ctx-size = 4096`、`parallel = 1` にして VRAM を抑える設定。
+
+### 測った VRAM（2026-10-24、VRAM 12GB）
+
+モデルを 1 つだけ載せたときの、そのモデルの VRAM。whisper-server（2GB）・VOICEVOX（1GB）・デスクトップで
+3.6GB ほど使うので、モデルに使えるのは 8.6GB ほど。
+
+| プリセット | ctx-size × parallel | VRAM |
+| --- | --- | --- |
+| gemma-4-E4B-it-qat（いつも載せる） | 32768 × 2 | 3.7G（131072 × 4 だと 5.3G） |
+| translategemma-4b | 16384 × 4 | 4.2G |
+| Gemma-4-E4B-Uncensored | 16384 × 2 | 4.3G |
+| ornith-1.0-9b | 16384 × 1 | 5.5G（65536 だと 7.1G） |
+| Hy-MT2-7B-GGUF | 8192 × 2 | 5.6G |
+| gemma-4-E4B-it | 196608 × 4 | 7.6G |
+| gemma-4-12B-it-qat / gemma-4-12B-QAT-Uncensored | 16384 × 1 | 7.8G |
+| gemma-4-12b-it-qat-imatrix | 16384 × 1 | 7.9G（32768 だと 8.3G で載らないことがある） |
+
+- E4B（qat）と並べて載せられるのは translategemma-4b まで。12B は E4B と同時には載らない。
+- Gemma 4 は KV キャッシュが小さく、12B を 32768 から 8192 に絞っても 0.5GB ほどしか減らない。
+- ctx-size を書かないと、モデルが対応する最大の長さで KV を取ろうとして失敗する。必ず書く。
+- translategemma-12b（2048 × 1 でも載らない）と vntl-llama3-8b-v2（Q8_0、重みだけで 8GB）は載らない。
+- VOICEVOX は使うと VRAM が増える（歌わせると 3GB ほど）。足りないときは `docker restart voicevox`。
 
 ## 翻訳用モデルの考え方
 
-`translategemma-4b-translate` と `translategemma-12b-translate` は
-Local Translator や xTranslator 向けの軽量設定。
+`translategemma-4b-translate` は Local Translator や xTranslator 向けの軽量設定。
 
 - `ctx-size = 4096` で KV cache の使用量を抑える
 - `parallel = 1` で同時処理数を抑える
 - `n-gpu-layers = 99` で GPU 使用量を固定寄りにする
-- 短文は 4B、長文やエラー時は 12B という使い分けを想定する
+- translategemma-12b は、このマシン（VRAM 12GB）では載らないので消した
 
-通常チャット用の `translategemma-4b` と `translategemma-12b` は
+通常チャット用の `translategemma-4b` は
 `ctx-size = 16384`、`parallel = 4` にしているので、翻訳専用設定よりメモリを使う。
 
 ## 注意点
