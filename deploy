@@ -1,0 +1,60 @@
+#!/bin/sh
+# 設定とコマンドを、リポジトリへのリンクとして配置し、llama-server を再起動する。
+#   ~/.config/llama.cpp/models.ini  → models.ini
+#   ~/.local/bin/hf-rm, llm-unload  → bin/
+# 配置先にリンクでない別のファイルがあれば、差分を出して何もせず止まる。-f で置き換える（元のファイルは .bak に残す）。
+# -n で llama-server を再起動しない。
+set -eu
+
+cd "$(dirname "$0")"
+repo=$(pwd)
+
+force= restart=1
+for a in "$@"; do
+  case $a in
+    -f) force=1 ;;
+    -n) restart= ;;
+    *) printf '%s\n' "usage: deploy [-f] [-n]" >&2; exit 64 ;;
+  esac
+done
+
+pairs() {
+  printf '%s %s\n' models.ini "$HOME/.config/llama.cpp/models.ini"
+  for f in hf-rm llm-unload; do
+    printf '%s %s\n' "bin/$f" "$HOME/.local/bin/$f"
+  done
+}
+
+conflict=
+while read -r src dst; do
+  [ -e "$dst" ] || [ -L "$dst" ] || continue
+  [ "$(readlink "$dst" 2>/dev/null)" = "$repo/$src" ] && continue
+  printf 'リポジトリへのリンクではない: %s\n' "$dst" >&2
+  [ -f "$dst" ] && { diff -u "$src" "$dst" >&2 || true; }
+  conflict=1
+done <<LIST
+$(pairs)
+LIST
+
+if [ -n "$conflict" ] && [ -z "$force" ]; then
+  printf '%s\n' "止めた。配置先の変更をリポジトリへ取り込むか、deploy -f で置き換える。" >&2
+  exit 1
+fi
+
+while read -r src dst; do
+  [ "$(readlink "$dst" 2>/dev/null)" = "$repo/$src" ] && continue
+  mkdir -p "$(dirname "$dst")"
+  [ -e "$dst" ] && [ ! -L "$dst" ] && mv "$dst" "$dst.bak"
+  ln -sfn "$repo/$src" "$dst"
+  printf 'linked %s -> %s\n' "$dst" "$repo/$src"
+done <<LIST
+$(pairs)
+LIST
+
+if [ -n "$restart" ] && systemctl --user is-enabled llama.cpp >/dev/null 2>&1; then
+  systemctl --user restart llama.cpp
+  # 立ち上がるまで待つ（30 秒まで）
+  i=0
+  until curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1 || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done
+  printf '%s\n' "llama.cpp を再起動した"
+fi

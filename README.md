@@ -692,6 +692,17 @@ du -sh /home/onoue/.cache/huggingface
 
 GGUF は数 GB から数十 GB になる。複数モデルを試すなら、空き容量を先に見ておく。
 
+## 配置する（deploy）
+
+`./deploy` で、設定とコマンドをリポジトリへのリンクとして置き、llama-server を再起動する。
+別の PC でも、`git pull` してから `./deploy` すればそろう。
+
+- `~/.config/llama.cpp/models.ini` → `models.ini`
+- `~/.local/bin/hf-rm`、`~/.local/bin/llm-unload` → `bin/`
+
+配置先にリンクでない別のファイルがあると、差分を出して止まる。`./deploy -f` で置き換える（元のファイルは `.bak` に残す）。
+`-n` を付けると llama-server を再起動しない。`llama.cpp.service` は Firefox 拡張の ID（`--cors-origins`）が PC ごとに違うので、リポジトリには入れていない。
+
 ## モデルを消す（hf-rm）
 
 `bin/hf-rm` で、Hugging Face のキャッシュ（`~/.cache/huggingface/hub`）にあるモデルを fzf で選んで消せる。
@@ -769,7 +780,7 @@ VRAM 使用量に効く主な設定は `ctx-size`、`parallel`、`n-gpu-layers`�
 - E4B（qat）と並べて載せられるのは translategemma-4b まで。12B は E4B と同時には載らない。
 - Gemma 4 は KV キャッシュが小さく、12B を 32768 から 8192 に絞っても 0.5GB ほどしか減らない。
 - ctx-size を書かないと、モデルが対応する最大の長さで KV を取ろうとして失敗する。必ず書く。
-- translategemma-12b（2048 × 1 でも載らない）と vntl-llama3-8b-v2（Q8_0、重みだけで 8GB）は載らない。
+- translategemma-12b（2048 × 1 でも載らない）と vntl-llama3-8b-v2（Q8_0、重みだけで 8GB）は載らないので消した。
 - VOICEVOX は使うと VRAM が増える（歌わせると 3GB ほど）。足りないときは `docker restart voicevox`。
 
 ## 翻訳用モデルの考え方
