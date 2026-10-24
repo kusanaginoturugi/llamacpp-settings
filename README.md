@@ -731,7 +731,12 @@ hf-rm             # Tab で複数選び、Enter で決定。確かめてから�
 
 `--models-max` は「同時に載せる個数」の上限で、VRAM の空きは見ない。上限の数までは古いモデルを残したまま
 新しいモデルを読み込もうとするので、VRAM が足りないと読み込みに失敗する（古いモデルが自動で降ろされるのは、
-上限の数を超えたときだけ）。使わないモデルは `bin/llm-unload` で降ろしておく。
+上限の数を超えたときだけ）。
+
+そこで `models.ini` の `[*]` に `sleep-idle-seconds = 300` を入れて、5 分使われないモデルは眠らせている。
+眠ったモデルは VRAM をほとんど使わず（translategemma-4b で 4.2GB → 0.2GB）、次のリクエストで数秒で起きる。
+いつも使う gemma-4-E4B-it-qat と、CPU で動かす laya-q8 は `-1` にして眠らせない。
+眠るのを待たずに、今すぐ VRAM を空けたいときは `bin/llm-unload` で降ろす。
 
 ```sh
 ln -sf ~/src/llamacpp-settings/bin/llm-unload ~/.local/bin/llm-unload
