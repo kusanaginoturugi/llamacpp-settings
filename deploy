@@ -2,6 +2,9 @@
 # 設定とコマンドを、リポジトリへのリンクとして配置し、llama-server を再起動する。
 #   ~/.config/llama.cpp/models.ini  → models.ini
 #   ~/.local/bin/hf-rm, llm-unload  → bin/
+#   ~/.config/systemd/user/llama.cpp.service → systemd/llama.cpp.service
+# PC ごとに違う設定は ~/.config/llama.cpp/llama.env に書く（llama.env.example）。
+# なければ、今の llama.cpp.service の --cors-origins から作る。それもなければ、例を置いて止まる。
 # 配置先にリンクでない別のファイルがあれば、差分を出して何もせず止まる。-f で置き換える（元のファイルは .bak に残す）。
 # -n で llama-server を再起動しない。
 set -eu
@@ -23,7 +26,25 @@ pairs() {
   for f in hf-rm llm-unload; do
     printf '%s %s\n' "bin/$f" "$HOME/.local/bin/$f"
   done
+  printf '%s %s\n' systemd/llama.cpp.service "$HOME/.config/systemd/user/llama.cpp.service"
 }
+
+env=$HOME/.config/llama.cpp/llama.env
+if [ ! -e "$env" ]; then
+  mkdir -p "$(dirname "$env")"
+  old=$HOME/.config/systemd/user/llama.cpp.service
+  origins=
+  [ -f "$old" ] && origins=$(sed -n 's/.*--cors-origins[ =]\([^ \\]*\).*/\1/p' "$old" | head -n 1)
+  if [ -n "$origins" ]; then
+    grep -v '^LLAMA_ARG_CORS_ORIGINS=' llama.env.example > "$env"
+    printf 'LLAMA_ARG_CORS_ORIGINS=%s\n' "$origins" >> "$env"
+    printf '作った %s（今の llama.cpp.service の --cors-origins から）\n' "$env"
+  else
+    cp llama.env.example "$env"
+    printf '%s\n' "$env を例から作った。LLAMA_ARG_CORS_ORIGINS に Firefox 拡張の ID を書いてから、もう一度 deploy する。" >&2
+    exit 1
+  fi
+fi
 
 conflict=
 while read -r src dst; do
@@ -51,6 +72,7 @@ done <<LIST
 $(pairs)
 LIST
 
+systemctl --user daemon-reload
 if [ -n "$restart" ] && systemctl --user is-enabled llama.cpp >/dev/null 2>&1; then
   systemctl --user restart llama.cpp
   # 立ち上がるまで待つ（30 秒まで）

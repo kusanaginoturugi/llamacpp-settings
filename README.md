@@ -699,9 +699,15 @@ GGUF は数 GB から数十 GB になる。複数モデルを試すなら、空�
 
 - `~/.config/llama.cpp/models.ini` → `models.ini`
 - `~/.local/bin/hf-rm`、`~/.local/bin/llm-unload` → `bin/`
+- `~/.config/systemd/user/llama.cpp.service` → `systemd/llama.cpp.service`
 
 配置先にリンクでない別のファイルがあると、差分を出して止まる。`./deploy -f` で置き換える（元のファイルは `.bak` に残す）。
-`-n` を付けると llama-server を再起動しない。`llama.cpp.service` は Firefox 拡張の ID（`--cors-origins`）が PC ごとに違うので、リポジトリには入れていない。
+`-n` を付けると llama-server を再起動しない。
+
+PC ごとに違う設定は `~/.config/llama.cpp/llama.env` に書く（`llama.env.example` を見る）。今は、llama-server を呼べる
+オリジン（Firefox 拡張の ID）の `LLAMA_ARG_CORS_ORIGINS` だけ。`--cors-origins` と同じ意味で、ないと全部のオリジンを許して
+しまうので、llama.env がないと llama.cpp.service は起動しない。deploy は llama.env がなければ、配置先の
+llama.cpp.service の `--cors-origins` から作る（それもなければ例を置いて止まるので、ID を書いてからもう一度 deploy する）。
 
 ## モデルを消す（hf-rm）
 

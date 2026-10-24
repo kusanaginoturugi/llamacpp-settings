@@ -1,0 +1,24 @@
+[Unit]
+Description=llama.cpp server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# PC ごとに違う設定（Firefox 拡張の ID を入れた LLAMA_ARG_CORS_ORIGINS）。llama.env.example を見る。
+# ないと CORS がすべてのオリジンを許してしまうので、なければ起動しない（「-」を付けない）
+EnvironmentFile=%h/.config/llama.cpp/llama.env
+ExecStart=/usr/bin/llama-server \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --models-preset %h/.config/llama.cpp/models.ini \
+  --models-max 2 \
+  --jinja \
+  --path %h/src/oss/llama.cpp/tools/ui/dist \
+  --tools read_file,file_glob_search,grep_search \
+  --ui-mcp-proxy
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
