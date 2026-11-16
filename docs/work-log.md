@@ -60,3 +60,4 @@
 - もう 1 台の PC のコミット（service のリポジトリ化、llama.env、VRAM 実測、vntl 削除）と合流した。models.ini は VRAM 実測の値を土台に、こちらで足した plamo・hy-mt1.5・lfm2.5・bge-m3 を加えた。こちらで消していた gemma-4-12B-it-qat と translategemma-4b は、向こうで設定を詰めていたので残した。
 - `systemd/llama.cpp.service` の `ExecStart` を、パッケージ版の `/usr/bin/llama-server` からビルド版の `%h/src/oss/llama.cpp-runtime/build/bin/llama-server` に変えた。どの PC も同じ場所にビルドしておく前提。
 - README の systemd の節を、リポジトリの service と `llama.env` を前提にした説明に直し、chat-template の表から消えたプリセット（vntl、translategemma-12b）を外した。
+- この PC で `./deploy -f` を実行した。`~/.config/llama.cpp/models.ini` はリンクではなく 11/5 時点のコピーだった（中身は合流前のローカル版と同一だったので失うものはなし）。元のファイルは `models.ini.bak` と `llama.cpp.service.bak` に残っている。`llama.env` は旧 service の `--cors-origins` から作られた。再起動後、ビルド版で起動し、拡張のオリジンへの CORS 許可と翻訳 API の応答を確認した。
