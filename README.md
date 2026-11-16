@@ -9,28 +9,57 @@
 
 ## 前提
 
-- `llama-server` が `/usr/bin/llama-server` にある
-- llama.cpp は AUR パッケージ `llama.cpp-cuda` で入れる
+- `llama-server` は自前でビルドしたものを使う。置き場所は `/home/onoue/src/oss/llama.cpp-runtime/build/bin/llama-server`
+- パッケージ版は更新が遅いので使わない
 - モデル設定ファイルは、このリポジトリの `models.ini` を `~/.config/llama.cpp/models.ini` にリンクして使う
 - llama.cpp の Web UI が `/home/onoue/src/oss/llama.cpp/tools/ui/dist` にある
 - server は `127.0.0.1:8080` で待ち受ける
 
 ## インストール
 
-Arch Linux では AUR の `llama.cpp-cuda` を使う。
+パッケージ版は上流のリリースに追いつくのが遅い。だから llama.cpp を `~/src/oss/llama.cpp-runtime` に clone して、リリースタグをビルドする。
+Web UI の dist を取っている `~/src/oss/llama.cpp` とは別のチェックアウトにしてある。こうしておくと、作業中のツリーをいじっても稼働中のサーバーに影響しない。
+
+ビルドには CUDA（`nvcc` は `/opt/cuda/bin/nvcc`）、`cmake`、`ninja` を使う。
 
 ```sh
-yay -S llama.cpp-cuda
+sudo pacman -S --needed cuda cmake ninja
+git clone https://github.com/ggml-org/llama.cpp.git ~/src/oss/llama.cpp-runtime
+cd ~/src/oss/llama.cpp-runtime
+git checkout v0.9.0
+cmake -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DGGML_CUDA=ON \
+  -DCMAKE_CUDA_ARCHITECTURES=86
+cmake --build build --target llama-server -j
 ```
 
-インストールされた場所を確認する。
+`CMAKE_CUDA_ARCHITECTURES=86` は RTX 30 系（Ampere）用の値。GPU が違う PC では、その GPU の compute capability に合わせて変える。
+`build/bin/` には `llama-server` と共有ライブラリ（`libllama.so` など）ができる。systemd からはこの `llama-server` を直接起動する。
+
+ビルドできたか確認する。
 
 ```sh
-command -v llama-server
-pacman -Ql llama.cpp-cuda | grep '/llama-server$'
+~/src/oss/llama.cpp-runtime/build/bin/llama-server --version
 ```
 
-この設定では `/usr/bin/llama-server` を systemd から起動する。
+### 更新
+
+新しいタグを取ってきてビルドし直し、サービスを再起動する。
+
+```sh
+cd ~/src/oss/llama.cpp-runtime
+git fetch --tags
+git checkout <新しいタグ>
+cmake --build build --target llama-server -j
+systemctl --user restart llama.cpp
+```
+
+### パッケージ版が残っている場合
+
+`llama-cpp` パッケージが入っていると、PATH 上の `llama-server` / `llama-cli` は `/usr/bin` のパッケージ版を指す。
+`command -v llama-server` で出てくるのはビルド版じゃないので、ビルド版を動かすときはフルパスで指定する。
+ビルド版は `llama-server` だけ作っているので、`llama-cli` はパッケージ版を使う。
 
 ## GPU/CUDA 確認
 
@@ -46,13 +75,13 @@ GPU 名、Driver Version、CUDA Version、VRAM 使用量が出ればドライバ
 `llama-server` のビルド情報を確認する。
 
 ```sh
-llama-server --version
+~/src/oss/llama.cpp-runtime/build/bin/llama-server --version
 ```
 
 CUDA 対応ビルドかどうかは、起動ログで確認するのが確実。
 
 ```sh
-llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
+~/src/oss/llama.cpp-runtime/build/bin/llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
   --n-gpu-layers 1 \
   --ctx-size 512 \
   --no-webui
@@ -73,14 +102,23 @@ ln -sf ~/src/llamacpp-settings/models.ini ~/.config/llama.cpp/models.ini
 
 ## chat-template の扱い
 
-通常は `models.ini` に `chat-template-file` を書かない。
-Hugging Face から取得する GGUF には chat template が含まれているので、llama.cpp 側に任せる。
+Hugging Face から取得する GGUF には chat template が含まれている。それで足りるモデルは `chat-template-file` を書かず、llama.cpp 側に任せる。
+
+今の `models.ini` では、次のプリセットが `chat-template-file` で `models/` のテンプレートを指定している。
+
+| プリセット | テンプレート |
+| --- | --- |
+| `Gemma-4-E4B-Uncensored` | `Gemma-4-E4B-Uncensored-HauhauCS-Aggressive.jinja` |
+| `gemma-4-12B-QAT-Uncensored` | `Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced.jinja` |
+| `gemma-4-E4B-it` | `gemma-4-E4B-it-GGUF.jinja` |
+| `translategemma-12b` | `gemma.jinja` |
+| `plamo-3-translate-0.8b` | `plamo-3-translate-0.8b-chat-template.jinja` |
+| `ornith-1.0-9b` | `Ornith-1.0-9B-GGUF.jinja` |
+| `vntl-llama3-8b-v2` | `vntl-llama3-8b-v2.jinja` |
 
 `chat-template-file` を固定すると、モデル側や llama.cpp 側のテンプレート更新に追従できない。
 古いテンプレートを使い続けると、tool calling、reasoning、system message、マルチモーダル対応などで不具合の原因になる。
-
-カスタムしたい場合だけ `chat-template-file = /path/to/template.jinja` を追加する。
-その場合はテンプレートの保守も自分でやる。
+指定したプリセットは、テンプレートの保守も自分でやる。
 
 使っているテンプレートは、このリポジトリの `models/` に置き、`models.ini` からは
 `/home/onoue/src/llamacpp-settings/models/〜.jinja` を指す。自宅と職場で同じファイルを使うため。
@@ -207,7 +245,7 @@ llama-cli -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
 
 推奨値が書かれている場合は、それを `models.ini` に反映する候補にする。
 推奨値が不明な場合は、まず保守的に `ctx-size = 4096`、`parallel = 1` で試す。
-chat template は確認だけしておく。通常は GGUF 内蔵のものを使うので、`chat-template-file` は追加しない。
+chat template も確認しておく。GGUF 内蔵のもので動けば `chat-template-file` は追加しない。カスタムが必要なときだけ `models/` にテンプレートを置いて指定する。
 
 メモリ使用量を見ながら、`ctx-size` と `parallel` を上げる。
 
@@ -225,7 +263,7 @@ watch -n 1 nvidia-smi
 CLI で問題なければ、次に一時的に server として起動して OpenAI 互換 API と Web UI で確認する。
 
 ```sh
-llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
+~/src/oss/llama.cpp-runtime/build/bin/llama-server -hf unsloth/gemma-4-E4B-it-GGUF:Q4_K_M \
   --host 127.0.0.1 \
   --port 18080 \
   --jinja \
@@ -324,15 +362,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/llama-server \
+ExecStart=/home/onoue/src/oss/llama.cpp-runtime/build/bin/llama-server \
   --host 127.0.0.1 \
   --port 8080 \
   --models-preset /home/onoue/.config/llama.cpp/models.ini \
-  --models-max 1 \
+  --models-max 2 \
   --jinja \
   --path /home/onoue/src/oss/llama.cpp/tools/ui/dist \
-  --tools read_file,file_glob_search,grep_search,get_datetime \
-  --cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9" \
+  --tools read_file,file_glob_search,grep_search \
+  --cors-origins "moz-extension://3b7be389-9b48-4fcf-b3f1-6327f8d01666" \
   --ui-mcp-proxy
 Restart=on-failure
 RestartSec=3
@@ -341,19 +379,24 @@ RestartSec=3
 WantedBy=default.target
 ```
 
-`--models-max 1` は同時ロードするモデル数の上限。VRAM を抑えたい場合はこのままでよい。
+`--models-max 2` は同時ロードするモデル数の上限。2 つまで載せたままにしておけるが、実際に載るかは VRAM 次第。
+
+- `gemma-4-E4B-it-qat` と `plamo-3-translate-0.8b` は同時に載る
+- `gemma-4-12b-it-qat-imatrix` は `gemma-4-E4B-it-qat` と同時には載らない。後から読み込む側が `cudaMalloc failed: out of memory` で失敗して、API は 500 を返す
+
+12B を使うときは、ほかの大きいモデルを unload しておく。VRAM が足りなければ `--models-max 1` に下げる。
 
 `--jinja` は Jinja chat template を有効にするために必要。
-通常は GGUF 内の chat template を使うので、`models.ini` 側に `chat-template-file` は書かない。
+GGUF 内蔵の chat template を使うモデルと、`models.ini` で `chat-template-file` を指定するモデルがある（「chat-template の扱い」を参照）。
 
 `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は llama.cpp の Web UI を差し替えるために使う。
 この設定では、日本語化済みの Web UI dist を指定している。
 
 `--tools` は llama.cpp のツール呼び出しで使えるビルトインツールを指定する。
-この設定では読み取り・検索・日時取得だけを有効にしている。
+この設定では読み取りと検索だけを有効にしている。
 
 ```sh
---tools read_file,file_glob_search,grep_search,get_datetime
+--tools read_file,file_glob_search,grep_search
 ```
 
 llama.cpp のビルトインツールは次の通り。
@@ -366,7 +409,9 @@ llama.cpp のビルトインツールは次の通り。
 | `exec_shell_command` | シェルコマンド実行 | あり |
 | `write_file` | ファイル作成・上書き | あり |
 | `edit_file` | 既存ファイルの部分編集 | あり |
-| `get_datetime` | 日時取得 | なし |
+| `get_info` | OS 名・バージョンと作業ディレクトリの取得 | なし |
+
+以前のビルドにあった `get_datetime` は v0.9.0 にはない。使えるツールは `llama-server --help` の `--tools` の項で確認できる。
 
 `write_file` と `edit_file` は `llama-server` プロセスの OS 権限で動く。
 この service は `systemctl --user` で起動するため、通常は `onoue` ユーザー権限になる。
@@ -378,7 +423,7 @@ Web UI に出る `permissions.write = true` は確認表示用のメタ情報で
 `exec_shell_command`、`write_file`、`edit_file` を常駐 service で有効にする場合はかなり強い権限を渡すことになる。
 必要になった場合だけ有効化し、`--host 127.0.0.1`、`--cors-origins` の制限、systemd の `ProtectHome=` や `ReadWritePaths=` などで実行範囲を絞る。
 
-`--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"` は
+`--cors-origins "moz-extension://3b7be389-9b48-4fcf-b3f1-6327f8d01666"` は
 Offline-llm-translator ブラウザ拡張機能から llama-server にアクセスするために必要。
 拡張機能の ID が変わった場合は、この origin も差し替える。
 
@@ -747,14 +792,14 @@ VRAM 使用量に効く主な設定は `ctx-size`、`parallel`、`n-gpu-layers`�
 - `ctx-size` はコンテキスト長。大きいほど KV cache が増える。
 - `parallel` は同時処理数。増やすとスロット分のメモリが増える。
 - `n-gpu-layers` は GPU に載せるレイヤ数。`all` は可能な限り GPU に載せる。
-- `--models-max` は同時ロードするモデル数。この設定では `1` にして VRAM を抑えている。
+- `--models-max` は同時ロードするモデル数。この設定では `2`。載る組み合わせは systemd の節を参照。`1` にすると VRAM を抑えられる。
 
 起動に失敗する、または推論中に VRAM が足りない場合は、まずこの順で下げる。
 
 1. `parallel` を `1` にする
 2. `ctx-size` を下げる
 3. `n-gpu-layers = all` を数値指定にする
-4. 同時に使わないモデルを unload する、または `--models-max 1` を維持する
+4. 同時に使わないモデルを unload する、または `--models-max 1` に下げる
 5. 量子化の軽い GGUF に変える
 
 翻訳用の `translategemma-4b-translate` は、`ctx-size = 4096`、`parallel = 1` にして VRAM を抑える設定。

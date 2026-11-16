@@ -43,3 +43,17 @@
 - `write_file` / `edit_file` は `llama-server` の実行ユーザー権限で動き、専用 sandbox や書き込み先制限はないことを確認した。
 - README の MCP 章に、後で試す候補として fetch / URL reader、filesystem read-only、git read-only、memory、sqlite、Playwright、MarkItDown 系を追記した。
 - MCP server を追加する際は HTTP 系 transport、read-only、ローカル待ち受け、必要なディレクトリだけ許可する方針を追記した。
+
+## 2026-11-16
+
+- `llama.cpp.service` の `ExecStart` が、パッケージ版の `/usr/bin/llama-server` からビルド版の `/home/onoue/src/oss/llama.cpp-runtime/build/bin/llama-server` に変わっていたので、README を合わせた。パッケージ版は更新が遅いのが理由。
+- README のインストール手順を AUR `llama.cpp-cuda` からソースビルドに書き換えた。ビルド設定は `build/CMakeCache.txt` から拾った（v0.9.0、Release、`GGML_CUDA=ON`、`CMAKE_CUDA_ARCHITECTURES=86`、Ninja）。
+- 更新手順（タグを checkout、ビルドし直し、サービス再起動）を追記した。
+- `llama-cpp` 0.9.0-1.1 パッケージの `/usr/bin/llama-server` と `/usr/bin/llama-cli` がまだ残っていて、PATH 上はそちらが先に見つかる。そのため README の `llama-server` 実行例はビルド版のフルパスにした。`llama-cli` はビルドしていないのでパッケージ版のまま。
+- README と handoff の systemd 例・説明を実際の `llama.cpp.service` に合わせた。`--models-max` を 1 から 2 に、`--tools` から `get_datetime` を外し、`--cors-origins` の拡張機能 ID を `3b7be389-…` に変更。
+- v0.9.0 のビルトインツールに `get_datetime` がなく、代わりに `get_info`（OS 名・バージョンと cwd）があるので、README の表を更新した。
+- chat-template の説明を「通常は書かない」から実態に合わせ、`chat-template-file` を指定している 7 プリセットの一覧を README に載せた。
+- work-plan の `/etc/llama.cpp/models.ini` を `~/.config/llama.cpp/models.ini` に直した。
+- `--models-max 2` でも載る組み合わせは VRAM 次第だと README に追記した。E4B と plamo-3-translate は同時に載るが、12B は E4B と同時に載らない（`cudaMalloc failed: out of memory` で 500 になる）。
+- handoff の「CUDA が見えていない」という古い注意を、GPU 動作確認済みに更新した。
+- `models.ini` の `[Gemma-4-E4B-Uncensored]` にあった `mmproj=` の絶対パスを削除した。片方の PC の snapshot ハッシュを指していて、もう片方の PC では存在しなかった。`hf` 指定なので、mmproj は llama-server が自動で取得する（HF リポジトリに `mmproj-…-f16.gguf` があることを確認）。

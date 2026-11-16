@@ -6,10 +6,10 @@ llama.cpp を systemd user service で運用するための設定手順を READM
 
 ## 対応内容
 
-- `/etc/llama.cpp/models.ini` の設定例を文書化する
+- `~/.config/llama.cpp/models.ini`（このリポジトリの `models.ini` へのリンク）の設定例を文書化する
 - `/home/onoue/.config/systemd/user/llama.cpp.service` の設定例を文書化する
 - chat-template ファイルをリポジトリに同梱する
-- AUR `llama.cpp-cuda` での導入手順を追記する
+- llama.cpp をソースからビルドして使う手順を追記する（パッケージ版は更新が遅いので使わない）
 - GPU/CUDA の確認手順を追記する
 - Hugging Face キャッシュとモデル更新の説明を追記する
 - VRAM 調整指針を追記する
