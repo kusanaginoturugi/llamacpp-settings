@@ -57,3 +57,6 @@
 - `--models-max 2` でも載る組み合わせは VRAM 次第だと README に追記した。E4B と plamo-3-translate は同時に載るが、12B は E4B と同時に載らない（`cudaMalloc failed: out of memory` で 500 になる）。
 - handoff の「CUDA が見えていない」という古い注意を、GPU 動作確認済みに更新した。
 - `models.ini` の `[Gemma-4-E4B-Uncensored]` にあった `mmproj=` の絶対パスを削除した。片方の PC の snapshot ハッシュを指していて、もう片方の PC では存在しなかった。`hf` 指定なので、mmproj は llama-server が自動で取得する（HF リポジトリに `mmproj-…-f16.gguf` があることを確認）。
+- もう 1 台の PC のコミット（service のリポジトリ化、llama.env、VRAM 実測、vntl 削除）と合流した。models.ini は VRAM 実測の値を土台に、こちらで足した plamo・hy-mt1.5・lfm2.5・bge-m3 を加えた。こちらで消していた gemma-4-12B-it-qat と translategemma-4b は、向こうで設定を詰めていたので残した。
+- `systemd/llama.cpp.service` の `ExecStart` を、パッケージ版の `/usr/bin/llama-server` からビルド版の `%h/src/oss/llama.cpp-runtime/build/bin/llama-server` に変えた。どの PC も同じ場所にビルドしておく前提。
+- README の systemd の節を、リポジトリの service と `llama.env` を前提にした説明に直し、chat-template の表から消えたプリセット（vntl、translategemma-12b）を外した。

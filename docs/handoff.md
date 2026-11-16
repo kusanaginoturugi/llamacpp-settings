@@ -3,7 +3,7 @@
 ## 現状
 
 - README に llama.cpp の設定手順をまとめ済み。
-- GGUF 内蔵の chat template で足りるモデルは `chat-template-file` を書かない。今は 7 つのプリセットが `models/` のテンプレートを指定している（一覧は README の「chat-template の扱い」）。
+- GGUF 内蔵の chat template で足りるモデルは `chat-template-file` を書かない。今は 6 つのプリセットが `models/` のテンプレートを指定している（一覧は README の「chat-template の扱い」）。
 - llama.cpp Web UI の dist は参考用として `ui-dist/` に同梱済み。
 - README に日本語化済み Web UI の設定画面スクリーンショットを掲載済み。
 - systemd user service の実ファイルは `/home/onoue/.config/systemd/user/llama.cpp.service` にあり、`--path` 行の継続 `\` は修正済み。
@@ -30,7 +30,7 @@ sudo loginctl enable-linger onoue
 - `chat-template-file` はカスタムテンプレートが必要なプリセットだけで使い、テンプレートは `models/` に置く。
 - `llama.cpp.service` の `--path` は実運用では `/home/onoue/src/oss/llama.cpp/tools/ui/dist` を参照している。`ui-dist/` は参考用コピー。
 - `--path /home/onoue/src/oss/llama.cpp/tools/ui/dist` は日本語化済み Web UI dist を使うための指定。
-- `--cors-origins "moz-extension://3b7be389-9b48-4fcf-b3f1-6327f8d01666"` は Offline-llm-translator ブラウザ拡張機能用。
+- Offline-llm-translator ブラウザ拡張機能のオリジンは、PC ごとの `~/.config/llama.cpp/llama.env` の `LLAMA_ARG_CORS_ORIGINS` で許可する。
 - `--ui-mcp-proxy` は llama-server の Web UI から MCP を使うための指定。
 - 現在の `--tools` は `read_file,file_glob_search,grep_search` のみ（v0.9.0 に `get_datetime` はない）。書き込み系の `exec_shell_command`、`write_file`、`edit_file` は有効化していない。
 - `write_file` / `edit_file` は `llama-server` の実行ユーザー権限でファイルを書き込む。systemd user service では通常 `onoue` 権限になり、llama.cpp 側に専用 sandbox や書き込み先制限はない。

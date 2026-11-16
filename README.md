@@ -111,10 +111,9 @@ Hugging Face から取得する GGUF には chat template が含まれている�
 | `Gemma-4-E4B-Uncensored` | `Gemma-4-E4B-Uncensored-HauhauCS-Aggressive.jinja` |
 | `gemma-4-12B-QAT-Uncensored` | `Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced.jinja` |
 | `gemma-4-E4B-it` | `gemma-4-E4B-it-GGUF.jinja` |
-| `translategemma-12b` | `gemma.jinja` |
-| `plamo-3-translate-0.8b` | `plamo-3-translate-0.8b-chat-template.jinja` |
 | `ornith-1.0-9b` | `Ornith-1.0-9B-GGUF.jinja` |
-| `vntl-llama3-8b-v2` | `vntl-llama3-8b-v2.jinja` |
+| `translategemma-4b` | `gemma.jinja` |
+| `plamo-3-translate-0.8b` | `plamo-3-translate-0.8b-chat-template.jinja` |
 
 `chat-template-file` を固定すると、モデル側や llama.cpp 側のテンプレート更新に追従できない。
 古いテンプレートを使い続けると、tool calling、reasoning、system message、マルチモーダル対応などで不具合の原因になる。
@@ -352,39 +351,32 @@ curl http://127.0.0.1:8080/v1/models
 
 ## systemd user service
 
-`/home/onoue/.config/systemd/user/llama.cpp.service` を作成する。
+service はこのリポジトリの [`systemd/llama.cpp.service`](systemd/llama.cpp.service) を使い、`./deploy` で `~/.config/systemd/user/llama.cpp.service` にリンクする（「配置する（deploy）」を参照）。
 
 ```ini
-[Unit]
-Description=llama.cpp server
-After=network-online.target
-Wants=network-online.target
-
 [Service]
 Type=simple
-ExecStart=/home/onoue/src/oss/llama.cpp-runtime/build/bin/llama-server \
+EnvironmentFile=%h/.config/llama.cpp/llama.env
+ExecStart=%h/src/oss/llama.cpp-runtime/build/bin/llama-server \
   --host 127.0.0.1 \
   --port 8080 \
-  --models-preset /home/onoue/.config/llama.cpp/models.ini \
+  --models-preset %h/.config/llama.cpp/models.ini \
   --models-max 2 \
   --jinja \
-  --path /home/onoue/src/oss/llama.cpp/tools/ui/dist \
+  --path %h/src/oss/llama.cpp/tools/ui/dist \
   --tools read_file,file_glob_search,grep_search \
-  --cors-origins "moz-extension://3b7be389-9b48-4fcf-b3f1-6327f8d01666" \
   --ui-mcp-proxy
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=default.target
 ```
+
+`ExecStart` は、`~/src/oss/llama.cpp-runtime` でビルドした `llama-server` を指す（「インストール」を参照）。どの PC でも同じ場所にビルドしておく。
+PC ごとに違う設定（Firefox 拡張の ID）は `llama.env` に置き、`--cors-origins` は service に書かない。
 
 `--models-max 2` は同時ロードするモデル数の上限。2 つまで載せたままにしておけるが、実際に載るかは VRAM 次第。
 
 - `gemma-4-E4B-it-qat` と `plamo-3-translate-0.8b` は同時に載る
 - `gemma-4-12b-it-qat-imatrix` は `gemma-4-E4B-it-qat` と同時には載らない。後から読み込む側が `cudaMalloc failed: out of memory` で失敗して、API は 500 を返す
 
-12B を使うときは、ほかの大きいモデルを unload しておく。VRAM が足りなければ `--models-max 1` に下げる。
+12B を使うときは、ほかの大きいモデルを `llm-unload` で降ろしておく（「載っているモデルを降ろす（llm-unload）」を参照）。VRAM が足りなければ `--models-max 1` に下げる。
 
 `--jinja` は Jinja chat template を有効にするために必要。
 GGUF 内蔵の chat template を使うモデルと、`models.ini` で `chat-template-file` を指定するモデルがある（「chat-template の扱い」を参照）。
@@ -423,9 +415,9 @@ Web UI に出る `permissions.write = true` は確認表示用のメタ情報で
 `exec_shell_command`、`write_file`、`edit_file` を常駐 service で有効にする場合はかなり強い権限を渡すことになる。
 必要になった場合だけ有効化し、`--host 127.0.0.1`、`--cors-origins` の制限、systemd の `ProtectHome=` や `ReadWritePaths=` などで実行範囲を絞る。
 
-`--cors-origins "moz-extension://3b7be389-9b48-4fcf-b3f1-6327f8d01666"` は
-Offline-llm-translator ブラウザ拡張機能から llama-server にアクセスするために必要。
-拡張機能の ID が変わった場合は、この origin も差し替える。
+Offline-llm-translator ブラウザ拡張機能から llama-server にアクセスするには、拡張のオリジン（`moz-extension://<内部 UUID>`）を許可する。
+UUID は PC（Firefox のプロファイル）ごとに違うので、`llama.env` の `LLAMA_ARG_CORS_ORIGINS`（`--cors-origins` と同じ意味）に書く。
+拡張機能の ID が変わった場合は、`llama.env` を差し替える。
 
 `--ui-mcp-proxy` は llama-server の Web UI から MCP を使うために必要。
 

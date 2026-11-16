@@ -8,7 +8,8 @@ Type=simple
 # PC ごとに違う設定（Firefox 拡張の ID を入れた LLAMA_ARG_CORS_ORIGINS）。llama.env.example を見る。
 # ないと CORS がすべてのオリジンを許してしまうので、なければ起動しない（「-」を付けない）
 EnvironmentFile=%h/.config/llama.cpp/llama.env
-ExecStart=/usr/bin/llama-server \
+# llama.cpp はパッケージ版の更新が遅いので、~/src/oss/llama.cpp-runtime でビルドしたものを使う（README の「インストール」）
+ExecStart=%h/src/oss/llama.cpp-runtime/build/bin/llama-server \
   --host 127.0.0.1 \
   --port 8080 \
   --models-preset %h/.config/llama.cpp/models.ini \
