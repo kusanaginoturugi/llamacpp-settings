@@ -138,14 +138,6 @@ parallel = 4
 n-gpu-layers = all
 stop-timeout = 10
 
-[gemma4-coding-12b]
-ui = true
-model = /home/onoue/.local/lib/models/gemma4-coding-Q4_K_M.gguf
-ctx-size = 65536
-parallel = 1
-n-gpu-layers = all
-stop-timeout = 10
-
 # [translategemma-4b-translate]
 # Local Translator や xTranslator 向けの設定
 # c および parallel を 1 にセットし、GPU使用メモリを少なくする
